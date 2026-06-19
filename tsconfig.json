@@ -30,7 +30,8 @@
       "@appointments/*": ["src/appointments/*"],
       "@subscriptions/*": ["src/subscriptions/*"],
       "@payments/*": ["src/payments/*"],
-      "@notifications/*": ["src/notifications/*"]
+      "@notifications/*": ["src/notifications/*"],
+      "@dashboard/*": ["src/dashboard/*"]
     }
   },
   "include": ["src/**/*"],

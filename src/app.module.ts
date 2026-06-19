@@ -14,6 +14,7 @@ import { AppointmentsModule } from '@appointments/appointments.module';
 import { SubscriptionsModule } from '@subscriptions/subscriptions.module';
 import { PaymentsModule } from '@payments/payments.module';
 import { NotificationsModule } from '@notifications/notifications.module';
+import { DashboardModule } from '@dashboard/dashboard.module';
 import { HealthModule } from '@/health/health.module';
 
 @Module({
@@ -36,6 +37,7 @@ import { HealthModule } from '@/health/health.module';
     SubscriptionsModule,
     PaymentsModule,
     NotificationsModule,
+    DashboardModule,
     HealthModule,
   ],
 })
