@@ -24,7 +24,8 @@
       "@users/*": ["src/users/*"],
       "@config/*": ["src/config/*"],
       "@prisma/*": ["src/prisma/*"],
-      "@barbershops/*": ["src/barbershops/*"]
+      "@barbershops/*": ["src/barbershops/*"],
+      "@barbers/*": ["src/barbers/*"]
     }
   },
   "include": ["src/**/*"],

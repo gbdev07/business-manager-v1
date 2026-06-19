@@ -7,6 +7,7 @@ import { PrismaModule } from '@prisma/prisma.module';
 import { AuthModule } from '@auth/auth.module';
 import { UsersModule } from '@users/users.module';
 import { BarbershopsModule } from '@barbershops/barbershops.module';
+import { BarbersModule } from '@barbers/barbers.module';
 import { HealthModule } from '@/health/health.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { HealthModule } from '@/health/health.module';
     AuthModule,
     UsersModule,
     BarbershopsModule,
+    BarbersModule,
     HealthModule,
   ],
 })

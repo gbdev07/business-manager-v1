@@ -51,7 +51,7 @@ export class BarbershopsService {
           email: dto.email?.toLowerCase(),
           document: dto.document,
           logoUrl: dto.logo,
-          operatingHours: DEFAULT_OPERATING_HOURS as object,
+          operatingHours: DEFAULT_OPERATING_HOURS,
           ...addressData,
           members: {
             create: {
