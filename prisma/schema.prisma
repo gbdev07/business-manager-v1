@@ -76,6 +76,14 @@ enum PaymentType {
   @@map("payment_type")
 }
 
+enum PaymentProviderName {
+  MANUAL
+  ASAAS
+  MERCADO_PAGO
+
+  @@map("payment_provider_name")
+}
+
 // ─── User & RBAC (multi-tenant) ───────────────────────────────────────────────
 
 model User {
@@ -326,7 +334,8 @@ model Payment {
   type           PaymentType    @default(OTHER)
   amount         Decimal        @db.Decimal(10, 2)
   currency       String         @default("BRL")
-  status         PaymentStatus  @default(PENDING)
+  status         PaymentStatus      @default(PENDING)
+  provider       PaymentProviderName @default(MANUAL)
   method         PaymentMethod?
   description    String?
   externalId     String?        @map("external_id")

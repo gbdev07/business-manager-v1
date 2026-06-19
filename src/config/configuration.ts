@@ -15,6 +15,9 @@ const configuration = () => ({
     enabled: process.env.SWAGGER_ENABLED !== 'false',
     path: process.env.SWAGGER_PATH ?? 'docs',
   },
+  payments: {
+    defaultProvider: process.env.PAYMENT_DEFAULT_PROVIDER ?? 'MANUAL',
+  },
 });
 
 export default configuration;

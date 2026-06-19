@@ -28,7 +28,8 @@
       "@barbers/*": ["src/barbers/*"],
       "@customers/*": ["src/customers/*"],
       "@appointments/*": ["src/appointments/*"],
-      "@subscriptions/*": ["src/subscriptions/*"]
+      "@subscriptions/*": ["src/subscriptions/*"],
+      "@payments/*": ["src/payments/*"]
     }
   },
   "include": ["src/**/*"],
