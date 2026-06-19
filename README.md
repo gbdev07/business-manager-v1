@@ -62,7 +62,15 @@ docker compose up postgres -d
 npm run prisma:migrate
 ```
 
-### 4. Start the application
+### 4. Seed initial data
+
+```bash
+npm run prisma:seed
+```
+
+Creates system roles, a super admin user, and a demo barbershop.
+
+### 5. Start the application
 
 **Local development:**
 
@@ -90,6 +98,29 @@ Copy `.env.example` to `.env` and adjust as needed:
 | `JWT_EXPIRES_IN` | Token expiration | `7d` |
 | `SWAGGER_ENABLED` | Enable Swagger UI | `true` |
 | `SWAGGER_PATH` | Swagger route | `docs` |
+| `SEED_ADMIN_EMAIL` | Admin user email for seed | `admin@business-manager.com` |
+| `SEED_ADMIN_PASSWORD` | Admin user password for seed | `Admin@123!` |
+
+## Database schema
+
+Multi-tenant barbershop management model. `Barbershop` is the tenant root — all domain data is scoped by `barbershopId`.
+
+| Entity | Purpose |
+|---|---|
+| `User` | Platform users (login, soft delete) |
+| `Role` | RBAC roles with JSON permissions |
+| `BarbershopMember` | User ↔ Barbershop ↔ Role (multi-tenant access) |
+| `Barbershop` | Tenant root (soft delete) |
+| `Barber` | Barbers linked to a barbershop (soft delete) |
+| `Customer` | Customers per barbershop (soft delete) |
+| `Appointment` | Scheduled services (soft delete + status) |
+| `Subscription` | Plans (`PLAN`) and customer enrollments (`ENROLLMENT`) |
+| `Payment` | Financial records (immutable — no soft delete) |
+
+**Default admin (after seed):**
+
+- Email: `admin@business-manager.com`
+- Password: `Admin@123!`
 
 ## Available endpoints
 
@@ -110,6 +141,7 @@ npm run lint               # ESLint
 npm run format             # Prettier
 npm run prisma:generate    # Generate Prisma Client
 npm run prisma:migrate     # Create & apply migrations
+npm run prisma:seed        # Seed roles, admin user, demo data
 npm run prisma:studio      # Prisma Studio GUI
 ```
 

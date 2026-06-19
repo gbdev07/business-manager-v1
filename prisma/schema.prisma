@@ -7,12 +7,318 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Base schema — extend with business models as features are implemented.
-model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+// ─── Enums ───────────────────────────────────────────────────────────────────
 
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+
+  @@map("appointment_status")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+
+  @@map("payment_status")
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  PIX
+  BANK_TRANSFER
+  OTHER
+
+  @@map("payment_method")
+}
+
+enum SubscriptionInterval {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+
+  @@map("subscription_interval")
+}
+
+enum SubscriptionType {
+  PLAN
+  ENROLLMENT
+
+  @@map("subscription_type")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  EXPIRED
+  INACTIVE
+
+  @@map("subscription_status")
+}
+
+enum PaymentType {
+  APPOINTMENT
+  SUBSCRIPTION
+  SUBSCRIPTION_RENEWAL
+  OTHER
+
+  @@map("payment_type")
+}
+
+// ─── User & RBAC (multi-tenant) ───────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  firstName    String    @map("first_name")
+  lastName     String    @map("last_name")
+  phone        String?
+  isActive     Boolean   @default(true) @map("is_active")
+  isSuperAdmin Boolean   @default(false) @map("is_super_admin")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  memberships BarbershopMember[]
+  barber      Barber?
+
+  @@index([deletedAt])
+  @@index([isActive])
   @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  permissions Json     @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  members BarbershopMember[]
+
+  @@map("roles")
+}
+
+model BarbershopMember {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  barbershopId String    @map("barbershop_id")
+  roleId       String    @map("role_id")
+  isActive     Boolean   @default(true) @map("is_active")
+  joinedAt     DateTime  @default(now()) @map("joined_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, barbershopId])
+  @@index([barbershopId, roleId])
+  @@index([barbershopId, isActive])
+  @@index([deletedAt])
+  @@map("barbershop_members")
+}
+
+// ─── Tenant root ──────────────────────────────────────────────────────────────
+
+model Barbershop {
+  id           String    @id @default(uuid())
+  slug         String    @unique
+  name         String
+  document     String?
+  email        String?
+  phone        String?
+  street       String?
+  number       String?
+  complement   String?
+  neighborhood String?
+  city         String?
+  state        String?
+  zipCode      String?   @map("zip_code")
+  country      String    @default("BR")
+  timezone     String    @default("America/Sao_Paulo")
+  isActive     Boolean   @default(true) @map("is_active")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  members       BarbershopMember[]
+  barbers       Barber[]
+  customers     Customer[]
+  appointments  Appointment[]
+  subscriptions Subscription[]
+  payments      Payment[]
+
+  @@index([isActive])
+  @@index([deletedAt])
+  @@index([city, state])
+  @@map("barbershops")
+}
+
+// ─── Domain entities ──────────────────────────────────────────────────────────
+
+model Barber {
+  id           String    @id @default(uuid())
+  barbershopId String    @map("barbershop_id")
+  userId       String?   @unique @map("user_id")
+  displayName  String    @map("display_name")
+  email        String?
+  phone        String?
+  bio          String?
+  specialty    String?
+  avatarUrl    String?   @map("avatar_url")
+  isActive     Boolean   @default(true) @map("is_active")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  barbershop   Barbershop    @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  appointments Appointment[]
+
+  @@unique([barbershopId, email])
+  @@index([barbershopId, isActive])
+  @@index([barbershopId, displayName])
+  @@index([deletedAt])
+  @@map("barbers")
+}
+
+model Customer {
+  id           String    @id @default(uuid())
+  barbershopId String    @map("barbershop_id")
+  firstName    String    @map("first_name")
+  lastName     String    @map("last_name")
+  email        String?
+  phone        String?
+  birthDate    DateTime? @map("birth_date") @db.Date
+  notes        String?
+  isActive     Boolean   @default(true) @map("is_active")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  barbershop    Barbershop     @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  appointments  Appointment[]
+  subscriptions Subscription[]
+  payments      Payment[]
+
+  @@unique([barbershopId, email])
+  @@index([barbershopId, phone])
+  @@index([barbershopId, lastName, firstName])
+  @@index([barbershopId, isActive])
+  @@index([deletedAt])
+  @@map("customers")
+}
+
+model Appointment {
+  id                 String            @id @default(uuid())
+  barbershopId       String            @map("barbershop_id")
+  barberId           String            @map("barber_id")
+  customerId         String            @map("customer_id")
+  scheduledAt        DateTime          @map("scheduled_at")
+  durationMinutes    Int               @default(30) @map("duration_minutes")
+  status             AppointmentStatus @default(SCHEDULED)
+  price              Decimal?          @db.Decimal(10, 2)
+  notes              String?
+  cancelledAt        DateTime?         @map("cancelled_at")
+  cancellationReason String?           @map("cancellation_reason")
+  deletedAt          DateTime?         @map("deleted_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  barber     Barber     @relation(fields: [barberId], references: [id], onDelete: Restrict)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  payments   Payment[]
+
+  @@index([barbershopId, scheduledAt])
+  @@index([barbershopId, status, scheduledAt])
+  @@index([barberId, scheduledAt])
+  @@index([customerId, scheduledAt])
+  @@index([deletedAt])
+  @@map("appointments")
+}
+
+/// Subscription with two modes:
+/// - PLAN: catalog item offered by the barbershop
+/// - ENROLLMENT: customer actively subscribed to a plan (references planId)
+model Subscription {
+  id           String                @id @default(uuid())
+  barbershopId String                @map("barbershop_id")
+  type         SubscriptionType      @default(PLAN)
+  name         String
+  description  String?
+  price        Decimal               @db.Decimal(10, 2)
+  currency     String                @default("BRL")
+  interval     SubscriptionInterval?
+  status       SubscriptionStatus    @default(ACTIVE)
+  planId       String?               @map("plan_id")
+  customerId   String?               @map("customer_id")
+  startDate    DateTime?             @map("start_date")
+  endDate      DateTime?             @map("end_date")
+  deletedAt    DateTime?             @map("deleted_at")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+
+  barbershop  Barbershop     @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  parentPlan  Subscription?  @relation("PlanEnrollments", fields: [planId], references: [id], onDelete: Restrict)
+  enrollments Subscription[] @relation("PlanEnrollments")
+  customer    Customer?      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  payments    Payment[]
+
+  @@index([barbershopId, type, status])
+  @@index([barbershopId, name])
+  @@index([customerId, status])
+  @@index([planId])
+  @@index([deletedAt])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id             String         @id @default(uuid())
+  barbershopId   String         @map("barbershop_id")
+  customerId     String?        @map("customer_id")
+  appointmentId  String?        @map("appointment_id")
+  subscriptionId String?        @map("subscription_id")
+  type           PaymentType    @default(OTHER)
+  amount         Decimal        @db.Decimal(10, 2)
+  currency       String         @default("BRL")
+  status         PaymentStatus  @default(PENDING)
+  method         PaymentMethod?
+  description    String?
+  externalId     String?        @map("external_id")
+  paidAt         DateTime?      @map("paid_at")
+  metadata       Json           @default("{}")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  barbershop   Barbershop    @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  customer     Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  appointment  Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([barbershopId, status, paidAt])
+  @@index([barbershopId, type, createdAt])
+  @@index([customerId, createdAt])
+  @@index([appointmentId])
+  @@index([subscriptionId])
+  @@index([externalId])
+  @@map("payments")
 }
