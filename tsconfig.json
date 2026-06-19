@@ -23,7 +23,8 @@
       "@auth/*": ["src/auth/*"],
       "@users/*": ["src/users/*"],
       "@config/*": ["src/config/*"],
-      "@prisma/*": ["src/prisma/*"]
+      "@prisma/*": ["src/prisma/*"],
+      "@barbershops/*": ["src/barbershops/*"]
     }
   },
   "include": ["src/**/*"],

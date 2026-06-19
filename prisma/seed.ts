@@ -1,6 +1,16 @@
 import { PrismaClient, SubscriptionInterval, SubscriptionType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
+const DEFAULT_OPERATING_HOURS = {
+  monday: { open: '09:00', close: '18:00', closed: false },
+  tuesday: { open: '09:00', close: '18:00', closed: false },
+  wednesday: { open: '09:00', close: '18:00', closed: false },
+  thursday: { open: '09:00', close: '18:00', closed: false },
+  friday: { open: '09:00', close: '18:00', closed: false },
+  saturday: { open: '09:00', close: '14:00', closed: false },
+  sunday: { open: '09:00', close: '14:00', closed: true },
+};
+
 const prisma = new PrismaClient();
 
 const ROLES = [
@@ -104,6 +114,7 @@ async function seedDemoBarbershop() {
       phone: '+5511999990000',
       city: 'São Paulo',
       state: 'SP',
+      operatingHours: DEFAULT_OPERATING_HOURS,
       isActive: true,
       deletedAt: null,
     },
@@ -119,6 +130,7 @@ async function seedDemoBarbershop() {
       state: 'SP',
       zipCode: '01000-000',
       country: 'BR',
+      operatingHours: DEFAULT_OPERATING_HOURS,
     },
   });
 
