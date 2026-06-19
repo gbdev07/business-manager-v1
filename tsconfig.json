@@ -26,7 +26,8 @@
       "@prisma/*": ["src/prisma/*"],
       "@barbershops/*": ["src/barbershops/*"],
       "@barbers/*": ["src/barbers/*"],
-      "@customers/*": ["src/customers/*"]
+      "@customers/*": ["src/customers/*"],
+      "@appointments/*": ["src/appointments/*"]
     }
   },
   "include": ["src/**/*"],
