@@ -171,6 +171,8 @@ async function seedDemoBarbershop() {
         price: 149.9,
         currency: 'BRL',
         interval: SubscriptionInterval.MONTHLY,
+        durationDays: 30,
+        benefits: ['4 cortes por mês', 'Barba inclusa', '10% desconto em produtos'],
       },
     });
   }

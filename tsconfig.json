@@ -27,7 +27,8 @@
       "@barbershops/*": ["src/barbershops/*"],
       "@barbers/*": ["src/barbers/*"],
       "@customers/*": ["src/customers/*"],
-      "@appointments/*": ["src/appointments/*"]
+      "@appointments/*": ["src/appointments/*"],
+      "@subscriptions/*": ["src/subscriptions/*"]
     }
   },
   "include": ["src/**/*"],

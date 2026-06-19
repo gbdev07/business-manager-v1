@@ -287,15 +287,19 @@ model Subscription {
   type         SubscriptionType      @default(PLAN)
   name         String
   description  String?
-  price        Decimal               @db.Decimal(10, 2)
-  currency     String                @default("BRL")
-  interval     SubscriptionInterval?
-  status       SubscriptionStatus    @default(ACTIVE)
-  planId       String?               @map("plan_id")
-  customerId   String?               @map("customer_id")
-  startDate    DateTime?             @map("start_date")
-  endDate      DateTime?             @map("end_date")
-  deletedAt    DateTime?             @map("deleted_at")
+  price         Decimal               @db.Decimal(10, 2)
+  currency      String                @default("BRL")
+  interval      SubscriptionInterval?
+  durationDays  Int?                  @map("duration_days")
+  benefits      Json                  @default("[]")
+  status        SubscriptionStatus    @default(ACTIVE)
+  planId        String?               @map("plan_id")
+  customerId    String?               @map("customer_id")
+  startDate     DateTime?             @map("start_date")
+  endDate       DateTime?             @map("end_date")
+  autoRenew     Boolean               @default(false) @map("auto_renew")
+  nextRenewalAt DateTime?             @map("next_renewal_at")
+  deletedAt     DateTime?             @map("deleted_at")
   createdAt    DateTime              @default(now()) @map("created_at")
   updatedAt    DateTime              @updatedAt @map("updated_at")
 
