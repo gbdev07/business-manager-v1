@@ -8,6 +8,7 @@ import { AuthModule } from '@auth/auth.module';
 import { UsersModule } from '@users/users.module';
 import { BarbershopsModule } from '@barbershops/barbershops.module';
 import { BarbersModule } from '@barbers/barbers.module';
+import { CustomersModule } from '@customers/customers.module';
 import { HealthModule } from '@/health/health.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { HealthModule } from '@/health/health.module';
     UsersModule,
     BarbershopsModule,
     BarbersModule,
+    CustomersModule,
     HealthModule,
   ],
 })
