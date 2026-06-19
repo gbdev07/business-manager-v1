@@ -29,7 +29,8 @@
       "@customers/*": ["src/customers/*"],
       "@appointments/*": ["src/appointments/*"],
       "@subscriptions/*": ["src/subscriptions/*"],
-      "@payments/*": ["src/payments/*"]
+      "@payments/*": ["src/payments/*"],
+      "@notifications/*": ["src/notifications/*"]
     }
   },
   "include": ["src/**/*"],

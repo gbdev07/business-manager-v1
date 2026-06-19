@@ -8,7 +8,12 @@ import { parseBenefits } from '@subscriptions/utils/subscription.util';
 
 type EnrollmentWithRelations = Subscription & {
   parentPlan: { name: string } | null;
-  customer: { firstName: string; lastName: string } | null;
+  customer: {
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+  } | null;
 };
 
 export function mapPlanToResponse(plan: Subscription): SubscriptionPlanResponseDto {
@@ -65,5 +70,5 @@ export function mapEnrollmentToResponse(
 
 export const enrollmentInclude = {
   parentPlan: { select: { name: true } },
-  customer: { select: { firstName: true, lastName: true } },
+  customer: { select: { firstName: true, lastName: true, email: true, phone: true } },
 } as const;

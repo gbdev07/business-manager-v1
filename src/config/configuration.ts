@@ -18,6 +18,17 @@ const configuration = () => ({
   payments: {
     defaultProvider: process.env.PAYMENT_DEFAULT_PROVIDER ?? 'MANUAL',
   },
+  notifications: {
+    devLogEnabled: process.env.NOTIFICATION_DEV_LOG !== 'false',
+    enabledChannels: (process.env.NOTIFICATION_CHANNELS ?? 'EMAIL,WHATSAPP')
+      .split(',')
+      .map((channel) => channel.trim())
+      .filter(Boolean),
+    subscriptionExpiryLeadDays: parseInt(
+      process.env.NOTIFICATION_SUBSCRIPTION_EXPIRY_LEAD_DAYS ?? '3',
+      10,
+    ),
+  },
 });
 
 export default configuration;

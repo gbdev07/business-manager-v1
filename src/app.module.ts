@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import configuration from '@config/configuration';
 import { validate } from '@config/env.validation';
 import { CommonModule } from '@common/common.module';
@@ -12,6 +13,7 @@ import { CustomersModule } from '@customers/customers.module';
 import { AppointmentsModule } from '@appointments/appointments.module';
 import { SubscriptionsModule } from '@subscriptions/subscriptions.module';
 import { PaymentsModule } from '@payments/payments.module';
+import { NotificationsModule } from '@notifications/notifications.module';
 import { HealthModule } from '@/health/health.module';
 
 @Module({
@@ -22,6 +24,7 @@ import { HealthModule } from '@/health/health.module';
       validate,
       envFilePath: ['.env'],
     }),
+    EventEmitterModule.forRoot(),
     CommonModule,
     PrismaModule,
     AuthModule,
@@ -32,6 +35,7 @@ import { HealthModule } from '@/health/health.module';
     AppointmentsModule,
     SubscriptionsModule,
     PaymentsModule,
+    NotificationsModule,
     HealthModule,
   ],
 })

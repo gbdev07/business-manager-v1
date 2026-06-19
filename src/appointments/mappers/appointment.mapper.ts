@@ -4,12 +4,12 @@ import { joinFullName } from '@customers/utils/name.util';
 
 type AppointmentWithRelations = Appointment & {
   barber: Pick<Barber, 'displayName'>;
-  customer: Pick<Customer, 'firstName' | 'lastName'>;
+  customer: Pick<Customer, 'firstName' | 'lastName' | 'email' | 'phone'>;
 };
 
 export const appointmentInclude = {
   barber: { select: { displayName: true } },
-  customer: { select: { firstName: true, lastName: true } },
+  customer: { select: { firstName: true, lastName: true, email: true, phone: true } },
 } as const;
 
 export function mapAppointmentToResponse(

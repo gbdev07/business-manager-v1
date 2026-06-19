@@ -4,8 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AppointmentStatus, Prisma } from '@prisma/client';
 import { AuthenticatedUser } from '@auth/interfaces/authenticated-user.interface';
+import { joinFullName } from '@customers/utils/name.util';
+import {
+  AppointmentConfirmedEvent,
+  AppointmentCreatedEvent,
+} from '@notifications/events/notification.events';
 import { PrismaService } from '@prisma/prisma.service';
 import { AppointmentsScheduleValidator } from '@appointments/appointments-schedule.validator';
 import {
@@ -31,11 +37,16 @@ import {
   mapAppointmentToResponse,
 } from '@appointments/mappers/appointment.mapper';
 
+type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
+  include: typeof appointmentInclude;
+}>;
+
 @Injectable()
 export class AppointmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scheduleValidator: AppointmentsScheduleValidator,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async create(
@@ -73,6 +84,8 @@ export class AppointmentsService {
       },
       include: appointmentInclude,
     });
+
+    this.emitAppointmentCreated(appointment);
 
     return mapAppointmentToResponse(appointment);
   }
@@ -123,6 +136,8 @@ export class AppointmentsService {
       data: { status: AppointmentStatus.CONFIRMED },
       include: appointmentInclude,
     });
+
+    this.emitAppointmentConfirmed(updated);
 
     return mapAppointmentToResponse(updated);
   }
@@ -427,5 +442,33 @@ export class AppointmentsService {
     }
 
     return appointment;
+  }
+
+  private emitAppointmentCreated(appointment: AppointmentWithRelations): void {
+    this.eventEmitter.emit(
+      AppointmentCreatedEvent.eventName,
+      new AppointmentCreatedEvent(this.buildAppointmentNotificationPayload(appointment)),
+    );
+  }
+
+  private emitAppointmentConfirmed(appointment: AppointmentWithRelations): void {
+    this.eventEmitter.emit(
+      AppointmentConfirmedEvent.eventName,
+      new AppointmentConfirmedEvent(this.buildAppointmentNotificationPayload(appointment)),
+    );
+  }
+
+  private buildAppointmentNotificationPayload(appointment: AppointmentWithRelations) {
+    return {
+      appointmentId: appointment.id,
+      barbershopId: appointment.barbershopId,
+      customerId: appointment.customerId,
+      customerName: joinFullName(appointment.customer.firstName, appointment.customer.lastName),
+      customerEmail: appointment.customer.email,
+      customerPhone: appointment.customer.phone,
+      barberName: appointment.barber.displayName,
+      scheduledAt: appointment.scheduledAt,
+      durationMinutes: appointment.durationMinutes,
+    };
   }
 }

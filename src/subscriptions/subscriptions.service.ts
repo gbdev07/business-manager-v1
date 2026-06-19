@@ -5,8 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, SubscriptionStatus, SubscriptionType } from '@prisma/client';
 import { AuthenticatedUser } from '@auth/interfaces/authenticated-user.interface';
+import { joinFullName } from '@customers/utils/name.util';
+import { SubscriptionExpiringEvent } from '@notifications/events/notification.events';
 import { PrismaService } from '@prisma/prisma.service';
 import {
   AUTO_RENEWAL_RULES,
@@ -46,7 +50,11 @@ import {
 
 @Injectable()
 export class SubscriptionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly configService: ConfigService,
+  ) {}
 
   getAutoRenewalRules(): AutoRenewalRulesResponseDto {
     return {
@@ -374,6 +382,68 @@ export class SubscriptionsService {
     });
 
     return enrollments.map(mapEnrollmentToResponse);
+  }
+
+  /**
+   * Future hook for scheduled job — emits notification.subscription.expiring for each enrollment
+   * whose endDate falls within the configured lead window.
+   */
+  async processExpiringEnrollmentReminders(): Promise<number> {
+    const leadDays =
+      this.configService.get<number>('notifications.subscriptionExpiryLeadDays') ?? 3;
+    const enrollments = await this.findEnrollmentsExpiringWithinDays(leadDays);
+
+    for (const enrollment of enrollments) {
+      if (
+        !enrollment.parentPlan ||
+        !enrollment.customer ||
+        !enrollment.planId ||
+        !enrollment.customerId ||
+        !enrollment.endDate
+      ) {
+        continue;
+      }
+
+      const daysUntilExpiry = Math.max(
+        0,
+        Math.ceil((enrollment.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+      );
+
+      this.eventEmitter.emit(
+        SubscriptionExpiringEvent.eventName,
+        new SubscriptionExpiringEvent({
+          enrollmentId: enrollment.id,
+          planId: enrollment.planId,
+          planName: enrollment.parentPlan.name,
+          barbershopId: enrollment.barbershopId,
+          customerId: enrollment.customerId,
+          customerName: joinFullName(enrollment.customer.firstName, enrollment.customer.lastName),
+          customerEmail: enrollment.customer.email,
+          customerPhone: enrollment.customer.phone,
+          endDate: enrollment.endDate,
+          daysUntilExpiry,
+        }),
+      );
+    }
+
+    return enrollments.length;
+  }
+
+  private async findEnrollmentsExpiringWithinDays(leadDays: number) {
+    const now = new Date();
+    const deadline = new Date(now);
+    deadline.setDate(deadline.getDate() + leadDays);
+
+    return this.prisma.subscription.findMany({
+      where: {
+        type: SubscriptionType.ENROLLMENT,
+        status: SubscriptionStatus.ACTIVE,
+        deletedAt: null,
+        endDate: { gte: now, lte: deadline },
+      },
+      include: enrollmentInclude,
+      take: 100,
+    });
   }
 
   private resolveBarbershopFilter(

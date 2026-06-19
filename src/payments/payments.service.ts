@@ -5,8 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PaymentProviderName, PaymentStatus, Prisma } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Payment, PaymentProviderName, PaymentStatus, Prisma } from '@prisma/client';
 import { AuthenticatedUser } from '@auth/interfaces/authenticated-user.interface';
+import { joinFullName } from '@customers/utils/name.util';
+import { PaymentApprovedEvent } from '@notifications/events/notification.events';
 import { PrismaService } from '@prisma/prisma.service';
 import { CANCELLABLE_PAYMENT_STATUSES } from '@payments/constants/payment.constants';
 import { CancelChargeDto, CreateChargeDto } from '@payments/dto/create-charge.dto';
@@ -26,6 +29,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly providerFactory: PaymentProviderFactory,
     private readonly configService: ConfigService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   listProviders(): PaymentProvidersResponseDto {
@@ -88,6 +92,8 @@ export class PaymentsService {
         },
       });
 
+      await this.emitPaymentApprovedIfNeeded(updated, payment.status);
+
       return mapPaymentToChargeResponse(updated, {
         checkoutUrl: providerResult.checkoutUrl,
         barcode: providerResult.barcode,
@@ -128,6 +134,8 @@ export class PaymentsService {
           metadata: (providerResult.providerPayload ?? payment.metadata) as Prisma.InputJsonValue,
         },
       });
+
+      await this.emitPaymentApprovedIfNeeded(synced, payment.status);
 
       return mapPaymentToChargeResponse(synced, {
         checkoutUrl: providerResult.checkoutUrl,
@@ -357,5 +365,42 @@ export class PaymentsService {
     }
 
     return payment;
+  }
+
+  private async emitPaymentApprovedIfNeeded(
+    payment: Payment,
+    previousStatus: PaymentStatus,
+  ): Promise<void> {
+    if (payment.status !== PaymentStatus.PAID || previousStatus === PaymentStatus.PAID) {
+      return;
+    }
+
+    if (!payment.customerId) {
+      return;
+    }
+
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: payment.customerId, deletedAt: null },
+    });
+
+    if (!customer) {
+      return;
+    }
+
+    this.eventEmitter.emit(
+      PaymentApprovedEvent.eventName,
+      new PaymentApprovedEvent({
+        paymentId: payment.id,
+        barbershopId: payment.barbershopId,
+        customerId: customer.id,
+        customerName: joinFullName(customer.firstName, customer.lastName),
+        customerEmail: customer.email,
+        customerPhone: customer.phone,
+        amount: payment.amount.toString(),
+        currency: payment.currency,
+        type: payment.type,
+        paidAt: payment.paidAt ?? new Date(),
+      }),
+    );
   }
 }
