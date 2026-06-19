@@ -32,9 +32,21 @@ class EnvironmentVariables {
   @IsNotEmpty()
   JWT_SECRET!: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  JWT_EXPIRES_IN: string = '7d';
+  JWT_ACCESS_EXPIRES_IN?: string;
+
+  @IsOptional()
+  @IsString()
+  JWT_EXPIRES_IN?: string;
+
+  @IsOptional()
+  @IsString()
+  JWT_REFRESH_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  JWT_REFRESH_EXPIRES_IN?: string;
 
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => {
