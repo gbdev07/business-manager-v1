@@ -1,200 +1,146 @@
-import { PrismaClient, SubscriptionInterval, SubscriptionType } from '@prisma/client';
+/**
+ * Development seed. Creates the system roles and a demo barbershop tenant.
+ * The credentials below are for LOCAL DEVELOPMENT ONLY.
+ */
+import {
+  BillingInterval,
+  BusinessType,
+  CommissionType,
+  Prisma,
+  PrismaClient,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-
-const DEFAULT_OPERATING_HOURS = {
-  monday: { open: '09:00', close: '18:00', closed: false },
-  tuesday: { open: '09:00', close: '18:00', closed: false },
-  wednesday: { open: '09:00', close: '18:00', closed: false },
-  thursday: { open: '09:00', close: '18:00', closed: false },
-  friday: { open: '09:00', close: '18:00', closed: false },
-  saturday: { open: '09:00', close: '14:00', closed: false },
-  sunday: { open: '09:00', close: '14:00', closed: true },
-};
+import { buildSystemRoles, SystemRole } from '../src/core/users/system-roles';
+import { BARBERSHOP_ROLE_PERMISSIONS } from '../src/business-modules/barbershop/barbershop.permissions';
+import { DEFAULT_OPERATING_HOURS } from '../src/business-modules/barbershop/common/schedule.util';
 
 const prisma = new PrismaClient();
 
-const ROLES = [
-  {
-    name: 'Super Admin',
-    slug: 'super_admin',
-    description: 'Platform-wide administrator with full access',
-    isSystem: true,
-    permissions: ['*'],
-  },
-  {
-    name: 'Owner',
-    slug: 'owner',
-    description: 'Barbershop owner with full tenant access',
-    isSystem: true,
-    permissions: ['barbershop:*', 'barber:*', 'customer:*', 'appointment:*', 'subscription:*', 'payment:*'],
-  },
-  {
-    name: 'Manager',
-    slug: 'manager',
-    description: 'Barbershop manager with operational access',
-    isSystem: true,
-    permissions: ['barber:read', 'customer:*', 'appointment:*', 'subscription:read', 'payment:read'],
-  },
-  {
-    name: 'Barber',
-    slug: 'barber',
-    description: 'Barber with access to own schedule and customers',
-    isSystem: true,
-    permissions: ['appointment:read', 'appointment:update', 'customer:read'],
-  },
-  {
-    name: 'Receptionist',
-    slug: 'receptionist',
-    description: 'Front desk with scheduling and customer management',
-    isSystem: true,
-    permissions: ['customer:*', 'appointment:*', 'payment:create'],
-  },
-] as const;
+const DEMO_TENANT_SLUG = 'barbearia-demo';
+const DEMO_ADMIN_EMAIL = 'admin@demo.com';
+const DEMO_ADMIN_PASSWORD = 'Admin123!';
 
-async function seedRoles() {
-  for (const role of ROLES) {
+async function seedRoles(): Promise<void> {
+  for (const role of buildSystemRoles([BARBERSHOP_ROLE_PERMISSIONS])) {
     await prisma.role.upsert({
-      where: { slug: role.slug },
-      update: {
-        name: role.name,
-        description: role.description,
-        isSystem: role.isSystem,
-        permissions: role.permissions,
-      },
-      create: {
-        name: role.name,
-        slug: role.slug,
-        description: role.description,
-        isSystem: role.isSystem,
-        permissions: role.permissions,
-      },
+      where: { key: role.key },
+      create: { ...role, isSystem: true },
+      update: { name: role.name, description: role.description, permissions: role.permissions },
     });
   }
 }
 
-async function seedAdminUser() {
-  const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@business-manager.com';
-  const password = process.env.SEED_ADMIN_PASSWORD ?? 'Admin@123!';
-  const passwordHash = await bcrypt.hash(password, 12);
-
-  await prisma.user.upsert({
-    where: { email },
-    update: {
-      passwordHash,
-      firstName: 'System',
-      lastName: 'Administrator',
-      isSuperAdmin: true,
-      isActive: true,
-      deletedAt: null,
-    },
-    create: {
-      email,
-      passwordHash,
-      firstName: 'System',
-      lastName: 'Administrator',
-      isSuperAdmin: true,
-      isActive: true,
-    },
-  });
-
-  console.log(`Admin user ready: ${email}`);
-}
-
-async function seedDemoBarbershop() {
-  const ownerRole = await prisma.role.findUniqueOrThrow({ where: { slug: 'owner' } });
-  const admin = await prisma.user.findUniqueOrThrow({
-    where: { email: process.env.SEED_ADMIN_EMAIL ?? 'admin@business-manager.com' },
-  });
-
-  const barbershop = await prisma.barbershop.upsert({
-    where: { slug: 'barbearia-demo' },
-    update: {
-      name: 'Barbearia Demo',
-      email: 'contato@barbearia-demo.com',
-      phone: '+5511999990000',
-      city: 'São Paulo',
-      state: 'SP',
-      operatingHours: DEFAULT_OPERATING_HOURS,
-      isActive: true,
-      deletedAt: null,
-    },
-    create: {
-      slug: 'barbearia-demo',
-      name: 'Barbearia Demo',
-      email: 'contato@barbearia-demo.com',
-      phone: '+5511999990000',
-      street: 'Rua Exemplo',
-      number: '100',
-      neighborhood: 'Centro',
-      city: 'São Paulo',
-      state: 'SP',
-      zipCode: '01000-000',
-      country: 'BR',
-      operatingHours: DEFAULT_OPERATING_HOURS,
-    },
-  });
-
-  await prisma.barbershopMember.upsert({
-    where: {
-      userId_barbershopId: {
-        userId: admin.id,
-        barbershopId: barbershop.id,
-      },
-    },
-    update: {
-      roleId: ownerRole.id,
-      isActive: true,
-      deletedAt: null,
-    },
-    create: {
-      userId: admin.id,
-      barbershopId: barbershop.id,
-      roleId: ownerRole.id,
-    },
-  });
-
-  const existingPlan = await prisma.subscription.findFirst({
-    where: {
-      barbershopId: barbershop.id,
-      type: SubscriptionType.PLAN,
-      name: 'Plano Mensal Premium',
-    },
-  });
-
-  if (!existingPlan) {
-    await prisma.subscription.create({
-      data: {
-        barbershopId: barbershop.id,
-        type: SubscriptionType.PLAN,
-        name: 'Plano Mensal Premium',
-        description: '4 cortes por mês + barba',
-        price: 149.9,
-        currency: 'BRL',
-        interval: SubscriptionInterval.MONTHLY,
-        durationDays: 30,
-        benefits: ['4 cortes por mês', 'Barba inclusa', '10% desconto em produtos'],
-      },
-    });
-  }
-
-  console.log(`Demo barbershop ready: ${barbershop.slug}`);
-}
-
-async function main() {
-  console.log('Starting seed...');
-
+async function main(): Promise<void> {
   await seedRoles();
-  await seedAdminUser();
-  await seedDemoBarbershop();
 
-  console.log('Seed completed successfully.');
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: DEMO_TENANT_SLUG },
+    create: {
+      name: 'Barbearia Demo',
+      slug: DEMO_TENANT_SLUG,
+      businessType: BusinessType.BARBERSHOP,
+      email: 'contato@barbeariademo.com',
+      phone: '+5511999999999',
+    },
+    update: {},
+  });
+  const tenantId = tenant.id;
+
+  const ownerRole = await prisma.role.findUniqueOrThrow({ where: { key: SystemRole.OWNER } });
+  await prisma.user.upsert({
+    where: { email: DEMO_ADMIN_EMAIL },
+    create: {
+      tenantId,
+      roleId: ownerRole.id,
+      name: 'Administrador Demo',
+      email: DEMO_ADMIN_EMAIL,
+      passwordHash: await bcrypt.hash(DEMO_ADMIN_PASSWORD, 12),
+    },
+    update: {},
+  });
+
+  await prisma.barbershopSettings.upsert({
+    where: { tenantId },
+    create: { tenantId, operatingHours: DEFAULT_OPERATING_HOURS as Prisma.InputJsonValue },
+    update: {},
+  });
+
+  const services = [
+    { name: 'Corte', price: 45, durationMinutes: 30 },
+    { name: 'Barba', price: 35, durationMinutes: 30 },
+    { name: 'Corte + Barba', price: 70, durationMinutes: 60 },
+  ];
+  const [haircut] = await Promise.all(
+    services.map((service) =>
+      prisma.service.upsert({
+        where: { tenantId_name: { tenantId, name: service.name } },
+        create: { ...service, tenantId },
+        update: {},
+      }),
+    ),
+  );
+
+  const products = [
+    { name: 'Pomada modeladora', sku: 'POM-001', price: 39.9 },
+    { name: 'Óleo para barba', sku: 'OLEO-001', price: 49.9 },
+  ];
+  await Promise.all(
+    products.map((product) =>
+      prisma.product.upsert({
+        where: { tenantId_sku: { tenantId, sku: product.sku } },
+        create: { ...product, tenantId },
+        update: {},
+      }),
+    ),
+  );
+
+  await prisma.barber.upsert({
+    where: { tenantId_email: { tenantId, email: 'rafael@barbeariademo.com' } },
+    create: {
+      tenantId,
+      name: 'Rafael Souza',
+      email: 'rafael@barbeariademo.com',
+      specialties: ['Corte degradê', 'Barba'],
+      workDays: ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      workStartTime: '09:00',
+      workEndTime: '18:00',
+    },
+    update: {},
+  });
+
+  const plan = await prisma.subscriptionPlan.upsert({
+    where: { tenantId_name: { tenantId, name: 'Plano Mensal' } },
+    create: {
+      tenantId,
+      name: 'Plano Mensal',
+      description: 'Até 4 cortes por mês',
+      price: 129.9,
+      billingInterval: BillingInterval.MONTHLY,
+      durationDays: 30,
+    },
+    update: {},
+  });
+
+  await prisma.barbershopPlanBenefit.upsert({
+    where: { planId_serviceId: { planId: plan.id, serviceId: haircut.id } },
+    create: { tenantId, planId: plan.id, serviceId: haircut.id, quantityPerCycle: 4 },
+    update: {},
+  });
+
+  if ((await prisma.commissionRule.count({ where: { tenantId } })) === 0) {
+    await prisma.commissionRule.create({
+      data: { tenantId, type: CommissionType.PERCENTAGE, value: 40 },
+    });
+  }
+
+  console.log('Seed completed.');
+  console.log(`  Tenant: ${tenant.name} (${tenant.slug})`);
+  console.log(`  Login (development only): ${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD}`);
 }
 
 main()
-  .catch((error: unknown) => {
-    console.error('Seed failed:', error);
-    process.exit(1);
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
   })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .finally(() => prisma.$disconnect());

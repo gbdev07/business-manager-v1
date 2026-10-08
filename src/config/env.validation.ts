@@ -1,6 +1,5 @@
-import { plainToInstance, Transform } from 'class-transformer';
+import { plainToInstance } from 'class-transformer';
 import {
-  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -20,9 +19,9 @@ class EnvironmentVariables {
   @Max(65535)
   PORT: number = 3000;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  API_PREFIX: string = 'api/v1';
+  API_PREFIX?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -32,34 +31,33 @@ class EnvironmentVariables {
   @IsNotEmpty()
   JWT_SECRET!: string;
 
-  @IsOptional()
   @IsString()
-  JWT_ACCESS_EXPIRES_IN?: string;
+  @IsNotEmpty()
+  JWT_REFRESH_SECRET!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_EXPIRES_IN: string = '15m';
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_REFRESH_EXPIRES_IN: string = '7d';
 
   @IsOptional()
-  @IsString()
-  JWT_EXPIRES_IN?: string;
-
-  @IsOptional()
-  @IsString()
-  JWT_REFRESH_SECRET?: string;
-
-  @IsOptional()
-  @IsString()
-  JWT_REFRESH_EXPIRES_IN?: string;
-
-  @IsOptional()
-  @Transform(({ value }: { value: unknown }) => {
-    if (value === undefined || value === '') return true;
-    if (typeof value === 'boolean') return value;
-    return value === 'true';
-  })
-  @IsBoolean()
-  SWAGGER_ENABLED?: boolean;
+  @IsIn(['true', 'false'])
+  SWAGGER_ENABLED?: string;
 
   @IsOptional()
   @IsString()
   SWAGGER_PATH?: string;
+
+  @IsOptional()
+  @IsIn(['MANUAL', 'ASAAS', 'MERCADO_PAGO', 'STRIPE'])
+  PAYMENT_DEFAULT_PROVIDER?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  NOTIFICATION_DEV_LOG?: string;
 }
 
 export function validate(config: Record<string, unknown>): EnvironmentVariables {
@@ -67,9 +65,7 @@ export function validate(config: Record<string, unknown>): EnvironmentVariables 
     enableImplicitConversion: true,
   });
 
-  const errors = validateSync(validatedConfig, {
-    skipMissingProperties: false,
-  });
+  const errors = validateSync(validatedConfig, { skipMissingProperties: false });
 
   if (errors.length > 0) {
     throw new Error(errors.toString());

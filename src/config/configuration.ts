@@ -7,8 +7,8 @@ const configuration = () => ({
   },
   jwt: {
     secret: process.env.JWT_SECRET,
-    accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN ?? '15m',
-    refreshSecret: process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET,
+    expiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
+    refreshSecret: process.env.JWT_REFRESH_SECRET,
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   },
   swagger: {
@@ -20,14 +20,6 @@ const configuration = () => ({
   },
   notifications: {
     devLogEnabled: process.env.NOTIFICATION_DEV_LOG !== 'false',
-    enabledChannels: (process.env.NOTIFICATION_CHANNELS ?? 'EMAIL,WHATSAPP')
-      .split(',')
-      .map((channel) => channel.trim())
-      .filter(Boolean),
-    subscriptionExpiryLeadDays: parseInt(
-      process.env.NOTIFICATION_SUBSCRIPTION_EXPIRY_LEAD_DAYS ?? '3',
-      10,
-    ),
   },
 });
 
