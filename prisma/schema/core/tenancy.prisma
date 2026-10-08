@@ -1,0 +1,109 @@
+enum BusinessType {
+  BARBERSHOP
+  SALON
+  RETAIL
+  SERVICES
+  OTHER
+
+  @@map("business_type")
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+
+  @@map("tenant_status")
+}
+
+model Tenant {
+  id           String       @id @default(uuid())
+  name         String
+  slug         String       @unique
+  businessType BusinessType @map("business_type")
+  status       TenantStatus @default(ACTIVE)
+  document     String?
+  email        String?
+  phone        String?
+  timezone     String       @default("America/Sao_Paulo")
+  currency     String       @default("BRL") @db.Char(3)
+  settings     Json         @default("{}")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  // Back-relations required by Prisma. Business modules reference Tenant, never the opposite in code.
+  users                 User[]
+  customers             Customer[]
+  services              Service[]
+  products              Product[]
+  sales                 Sale[]
+  payments              Payment[]
+  subscriptionPlans     SubscriptionPlan[]
+  subscriptions         Subscription[]
+  auditLogs             AuditLog[]
+  barbershopSettings    BarbershopSettings?
+  barbers               Barber[]
+  appointments          Appointment[]
+  barbershopPlanBenefit BarbershopPlanBenefit[]
+  commissionRules       CommissionRule[]
+  commissions           Commission[]
+
+  @@index([status])
+  @@index([businessType])
+  @@map("tenants")
+}
+
+/// System roles (OWNER, ADMIN, MANAGER, EMPLOYEE). New roles are rows, not code changes.
+model Role {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String?
+  permissions String[]
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  roleId       String    @map("role_id")
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role          Role           @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  refreshTokens RefreshToken[]
+  sales         Sale[]
+  auditLogs     AuditLog[]
+  barber        Barber?
+
+  @@index([tenantId, isActive])
+  @@index([roleId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}

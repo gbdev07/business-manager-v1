@@ -1,0 +1,176 @@
+// Barbershop business module. Tables are prefixed with `barbershop_` to make ownership explicit.
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+
+  @@map("barbershop_appointment_status")
+}
+
+enum CommissionType {
+  PERCENTAGE
+  FIXED
+
+  @@map("barbershop_commission_type")
+}
+
+enum CommissionSource {
+  SERVICE
+  SALE
+
+  @@map("barbershop_commission_source")
+}
+
+enum CommissionStatus {
+  PENDING
+  PAID
+  CANCELLED
+
+  @@map("barbershop_commission_status")
+}
+
+/// Barbershop-specific configuration (one row per tenant).
+model BarbershopSettings {
+  id             String   @id @default(uuid())
+  tenantId       String   @unique @map("tenant_id")
+  /// { "monday": { "open": "09:00", "close": "19:00" }, "sunday": { "closed": true }, ... }
+  operatingHours Json     @default("{}") @map("operating_hours")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("barbershop_settings")
+}
+
+model Barber {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  userId        String?  @unique @map("user_id")
+  name          String
+  email         String?
+  phone         String?
+  specialties   String[]
+  /// Weekday keys: sunday, monday, ..., saturday
+  workDays      String[] @map("work_days")
+  workStartTime String?  @map("work_start_time")
+  workEndTime   String?  @map("work_end_time")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  appointments    Appointment[]
+  commissionRules CommissionRule[]
+  commissions     Commission[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, isActive])
+  @@map("barbershop_barbers")
+}
+
+model Appointment {
+  id                 String            @id @default(uuid())
+  tenantId           String            @map("tenant_id")
+  customerId         String            @map("customer_id")
+  barberId           String            @map("barber_id")
+  serviceId          String            @map("service_id")
+  startsAt           DateTime          @map("starts_at")
+  endsAt             DateTime          @map("ends_at")
+  status             AppointmentStatus @default(SCHEDULED)
+  price              Decimal?          @db.Decimal(10, 2)
+  notes              String?
+  confirmedAt        DateTime?         @map("confirmed_at")
+  completedAt        DateTime?         @map("completed_at")
+  cancelledAt        DateTime?         @map("cancelled_at")
+  cancellationReason String?           @map("cancellation_reason")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  barber     Barber      @relation(fields: [barberId], references: [id], onDelete: Restrict)
+  service    Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  commission Commission?
+
+  @@index([tenantId, startsAt])
+  @@index([tenantId, status, startsAt])
+  @@index([barberId, startsAt, endsAt])
+  @@index([customerId, startsAt])
+  @@map("barbershop_appointments")
+}
+
+/// Services included in a core subscription plan (barbershop rule on top of the generic plan).
+model BarbershopPlanBenefit {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  planId           String   @map("plan_id")
+  serviceId        String   @map("service_id")
+  quantityPerCycle Int      @map("quantity_per_cycle")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan    SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  service Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, serviceId])
+  @@index([tenantId])
+  @@map("barbershop_plan_benefits")
+}
+
+model CommissionRule {
+  id        String         @id @default(uuid())
+  tenantId  String         @map("tenant_id")
+  /// Null = applies to every barber
+  barberId  String?        @map("barber_id")
+  serviceId String?        @map("service_id")
+  productId String?        @map("product_id")
+  type      CommissionType
+  value     Decimal        @db.Decimal(10, 2)
+  isActive  Boolean        @default(true) @map("is_active")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  barber      Barber?      @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  service     Service?     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  product     Product?     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  commissions Commission[]
+
+  @@index([tenantId, isActive])
+  @@index([barberId])
+  @@index([serviceId])
+  @@map("barbershop_commission_rules")
+}
+
+model Commission {
+  id            String           @id @default(uuid())
+  tenantId      String           @map("tenant_id")
+  barberId      String           @map("barber_id")
+  ruleId        String?          @map("rule_id")
+  source        CommissionSource
+  appointmentId String?          @unique @map("appointment_id")
+  saleId        String?          @map("sale_id")
+  baseAmount    Decimal          @map("base_amount") @db.Decimal(12, 2)
+  amount        Decimal          @db.Decimal(12, 2)
+  status        CommissionStatus @default(PENDING)
+  paidAt        DateTime?        @map("paid_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  barber      Barber          @relation(fields: [barberId], references: [id], onDelete: Restrict)
+  rule        CommissionRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  appointment Appointment?    @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  sale        Sale?           @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, barberId, createdAt])
+  @@index([tenantId, status])
+  @@index([saleId])
+  @@map("barbershop_commissions")
+}

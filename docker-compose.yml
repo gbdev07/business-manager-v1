@@ -1,5 +1,7 @@
-# Development override — use: docker compose up
-# Production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+# Local stack: PostgreSQL (persistent volume) + API (production image).
+#   cp .env.example .env    # then set real JWT secrets
+#   docker compose up -d --build
+#   docker compose --profile seed run --rm seed   # optional demo data (development only)
 
 services:
   postgres:
@@ -9,13 +11,13 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-business_manager}
+      POSTGRES_DB: ${POSTGRES_DB:-business_platform}
     ports:
       - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-business_manager}']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-business_platform}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,27 +26,38 @@ services:
   api:
     build:
       context: .
-      target: builder
+      target: production
     container_name: bm-api
     restart: unless-stopped
-    command: sh -c "npx prisma migrate deploy && npm run start:dev"
     ports:
       - '${PORT:-3000}:3000'
-    environment:
-      NODE_ENV: development
+    environment: &api-env
+      NODE_ENV: ${NODE_ENV:-production}
       PORT: 3000
       API_PREFIX: ${API_PREFIX:-api/v1}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-business_manager}?schema=public
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-business_platform}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
       SWAGGER_PATH: ${SWAGGER_PATH:-docs}
-    volumes:
-      - .:/app
-      - /app/node_modules
+      PAYMENT_DEFAULT_PROVIDER: ${PAYMENT_DEFAULT_PROVIDER:-MANUAL}
+      NOTIFICATION_DEV_LOG: ${NOTIFICATION_DEV_LOG:-true}
     depends_on:
       postgres:
         condition: service_healthy
+
+  seed:
+    build:
+      context: .
+      target: builder
+    profiles: ['seed']
+    command: npx prisma db seed
+    environment: *api-env
+    depends_on:
+      api:
+        condition: service_started
 
 volumes:
   postgres_data:
