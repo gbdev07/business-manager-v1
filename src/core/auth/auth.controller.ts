@@ -1,28 +1,54 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post } from '@nestjs/common';
 import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Ip,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiAcceptedResponse,
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { CurrentUser, Public } from '@common/decorators/auth.decorators';
 import { AuthenticatedUser } from '@common/types/authenticated-user';
 import { AuthService } from '@core/auth/auth.service';
 import {
   AuthResponseDto,
   AuthUserDto,
+  ChangePasswordDto,
+  ForgotPasswordDto,
   LoginDto,
   MessageResponseDto,
   RefreshTokenDto,
+  ResetPasswordDto,
 } from '@core/auth/dto/auth.dto';
+import { INVALID_RESET_TOKEN_MESSAGE, PasswordService } from '@core/auth/password.service';
 import { RegisterTenantDto } from '@core/tenants/dto/tenant.dto';
+
+export const FORGOT_PASSWORD_MESSAGE =
+  'Se o e-mail estiver cadastrado, você receberá instruções para redefinir sua senha.';
+
+const TOO_MANY_REQUESTS = 'Rate limit exceeded for this endpoint; retry after `Retry-After`';
 
 @ApiTags('Core · Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordService: PasswordService,
+  ) {}
 
   @Public()
   @Post('register')
@@ -70,5 +96,84 @@ export class AuthController {
   @ApiOkResponse({ type: AuthUserDto })
   me(@CurrentUser() user: AuthenticatedUser): AuthUserDto {
     return user;
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Request a password reset link by e-mail',
+    description:
+      'Always answers with the same generic message, whether or not the e-mail is registered. ' +
+      'When the account exists and is active, a single-use link valid for ' +
+      'PASSWORD_RESET_TOKEN_TTL_MINUTES (default 30) is sent to the e-mail address. ' +
+      'Requesting a new link invalidates the previous one.',
+  })
+  @ApiAcceptedResponse({
+    type: MessageResponseDto,
+    schema: { example: { message: FORGOT_PASSWORD_MESSAGE } },
+  })
+  @ApiBadRequestResponse({ description: 'Malformed e-mail address' })
+  @ApiTooManyRequestsResponse({ description: TOO_MANY_REQUESTS })
+  forgotPassword(@Body() dto: ForgotPasswordDto, @Ip() ip: string): MessageResponseDto {
+    this.passwordService.requestPasswordReset(dto.email, ip);
+    return { message: FORGOT_PASSWORD_MESSAGE };
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Set a new password using the token received by e-mail',
+    description:
+      'The token is single-use. On success every session of the user is revoked ' +
+      '(refresh and access tokens) and the user must log in again with the new password.',
+  })
+  @ApiOkResponse({
+    type: MessageResponseDto,
+    schema: { example: { message: 'Senha redefinida com sucesso. Faça login novamente.' } },
+  })
+  @ApiBadRequestResponse({
+    description: `"${INVALID_RESET_TOKEN_MESSAGE}" for unknown, expired or already used tokens; validation errors for passwords outside the policy or not matching confirmPassword`,
+  })
+  @ApiTooManyRequestsResponse({ description: TOO_MANY_REQUESTS })
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+    @Ip() ip: string,
+  ): Promise<MessageResponseDto> {
+    await this.passwordService.resetPassword(dto.token, dto.newPassword, ip);
+    return { message: 'Senha redefinida com sucesso. Faça login novamente.' };
+  }
+
+  @UseGuards(ThrottlerGuard)
+  @Patch('change-password')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Change the password of the authenticated user',
+    description:
+      'The account is always the one identified by the access token. ' +
+      'On success every session of the user is revoked, including the current one: ' +
+      'the client must log in again with the new password.',
+  })
+  @ApiOkResponse({
+    type: MessageResponseDto,
+    schema: { example: { message: 'Senha alterada com sucesso. Faça login novamente.' } },
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Current password is incorrect, new password equals the current one, ' +
+      'violates the password policy or does not match confirmPassword',
+  })
+  @ApiUnauthorizedResponse({ description: 'Missing, invalid or revoked access token' })
+  @ApiTooManyRequestsResponse({ description: TOO_MANY_REQUESTS })
+  async changePassword(
+    @Body() dto: ChangePasswordDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string,
+  ): Promise<MessageResponseDto> {
+    await this.passwordService.changePassword(user, dto.currentPassword, dto.newPassword, ip);
+    return { message: 'Senha alterada com sucesso. Faça login novamente.' };
   }
 }

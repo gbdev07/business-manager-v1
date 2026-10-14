@@ -44,8 +44,9 @@ export class NotificationsService {
 
     if (!provider?.isAvailable()) {
       if (this.devLogEnabled) {
+        const content = message.sensitive ? '[sensitive content redacted]' : message.body;
         this.logger.log(
-          `[${message.channel} → ${message.to}] ${message.subject ?? ''} ${message.body}`.trim(),
+          `[${message.channel} → ${message.to}] ${message.subject ?? ''} ${content}`.trim(),
         );
       }
       return { channel: message.channel, status: 'SKIPPED' };
@@ -58,7 +59,7 @@ export class NotificationsService {
         `Failed to send ${message.channel} notification`,
         error instanceof Error ? error.stack : undefined,
       );
-      return { channel: message.channel, status: 'SKIPPED' };
+      return { channel: message.channel, status: 'FAILED' };
     }
   }
 

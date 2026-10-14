@@ -8,10 +8,8 @@ import {
   IsOptional,
   IsString,
   Length,
-  Matches,
-  MaxLength,
-  MinLength,
 } from 'class-validator';
+import { IsPasswordPolicy } from '@common/validation/password.validators';
 
 export class RegisterTenantDto {
   @ApiProperty({ example: 'Barbearia Central' })
@@ -33,12 +31,7 @@ export class RegisterTenantDto {
   email!: string;
 
   @ApiProperty({ example: 'StrongPass123!', minLength: 8 })
-  @IsString()
-  @MinLength(8)
-  @MaxLength(72)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
-    message: 'password must contain uppercase, lowercase and a number',
-  })
+  @IsPasswordPolicy()
   password!: string;
 
   @ApiPropertyOptional({ example: '+5511999999999' })

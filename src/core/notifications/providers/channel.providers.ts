@@ -22,11 +22,6 @@ abstract class NotIntegratedNotificationProvider implements NotificationProvider
 }
 
 @Injectable()
-export class EmailNotificationProvider extends NotIntegratedNotificationProvider {
-  readonly channel = NotificationChannel.EMAIL;
-}
-
-@Injectable()
 export class WhatsAppNotificationProvider extends NotIntegratedNotificationProvider {
   readonly channel = NotificationChannel.WHATSAPP;
 }
