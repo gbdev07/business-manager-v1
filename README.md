@@ -17,6 +17,7 @@ Plataforma SaaS **multi-tenant** para gestão de pequenas e médias empresas, co
   - [Como core e módulos se comunicam](#como-core-e-módulos-se-comunicam)
   - [Multi-tenancy](#multi-tenancy)
   - [Autenticação e autorização](#autenticação-e-autorização)
+  - [Recuperação e troca de senha](#recuperação-e-troca-de-senha)
   - [Decisão: Subscriptions](#decisão-subscriptions)
 - [Tecnologias](#tecnologias)
 - [Estrutura de pastas](#estrutura-de-pastas)
@@ -171,11 +172,54 @@ JWT → JwtStrategy (User ativo + Tenant ACTIVE) → TenantContextGuard → Tena
 - **Refresh token** JWT (`JWT_REFRESH_EXPIRES_IN`) assinado com `JWT_REFRESH_SECRET`; apenas o hash
   SHA-256 é persistido. Cada refresh **rotaciona** o token; reutilizar um token já rotacionado revoga
   todas as sessões do usuário (detecção de roubo).
+- O access token carrega a versão de sessão do usuário (`sv` ↔ `users.session_version`). Trocar ou
+  redefinir a senha incrementa essa versão, invalidando **imediatamente** os access tokens já emitidos.
 - Guards globais, nesta ordem: `JwtAuthGuard` → `TenantContextGuard` → `BusinessModuleGuard` → `PermissionsGuard`.
 - Rotas públicas usam `@Public()`; autorização por permissão com `@RequirePermissions('customers:manage')`.
 - Permissões suportam curinga global (`*`) e por recurso (`customers:*`, `barbershop.appointments:*`).
 - Roles do sistema são sincronizadas com o código **a cada boot** (`SystemRolesService`), incluindo as
   permissões contribuídas pelos módulos. O `OWNER` tem `*`.
+
+### Recuperação e troca de senha
+
+**Esqueci minha senha** (`POST /auth/forgot-password` → e-mail → `POST /auth/reset-password`):
+
+1. O cliente envia o e-mail (normalizado: `trim` + minúsculas). A API responde **sempre** `202` com a mesma
+   mensagem genérica, exista ou não a conta. O processamento acontece em segundo plano, então o tempo de
+   resposta também não revela se o e-mail está cadastrado.
+2. Se a conta existe e pode autenticar (usuário ativo e tenant `ACTIVE`), é gerado um token com
+   `crypto.randomBytes(32)` (base64url). **Somente o hash SHA-256** é salvo em `password_reset_tokens`,
+   com validade de `PASSWORD_RESET_TOKEN_TTL_MINUTES` (padrão 30). Um novo pedido invalida o link anterior.
+   Pedidos repetidos para a mesma conta dentro de `PASSWORD_RESET_COOLDOWN_SECONDS` são ignorados
+   silenciosamente (proteção contra bombardeio de e-mails).
+3. O link `PASSWORD_RESET_URL?token=...` é enviado pelo canal EMAIL do `NotificationsService`. Se o e-mail
+   não puder ser entregue (SMTP não configurado ou falha do provedor), o token é descartado e o evento é
+   registrado em log/auditoria — **sem** o token ou o link.
+4. `POST /auth/reset-password` valida a política de senha e a confirmação, faz o hash do token recebido e,
+   numa transação, marca o token como usado com um `UPDATE` condicional (`used_at IS NULL` e não expirado).
+   Tentativas concorrentes com o mesmo token são serializadas pelo PostgreSQL: apenas uma vence.
+   Na mesma transação: nova senha (bcrypt), revogação de todos os refresh tokens, incremento da versão de
+   sessão e remoção dos demais tokens de redefinição pendentes. Não há login automático.
+
+**Trocar senha** (`PATCH /auth/change-password`, autenticado): a conta é sempre a do access token
+(`@CurrentUser()`), nunca um `userId` do payload. Exige a senha atual, rejeita nova senha igual à atual e
+revoga todas as sessões, inclusive a atual — o cliente deve fazer login novamente.
+
+**Segurança transversal**
+
+- Política de senha única (`@IsPasswordPolicy()`): 8–72 caracteres, com maiúscula, minúscula e número.
+  É a mesma do cadastro e da criação de usuários.
+- Rate limit por IP e por endpoint (`@nestjs/throttler`) em `forgot-password`, `reset-password` e
+  `change-password`: `PASSWORD_RATE_LIMIT_MAX` requisições a cada `PASSWORD_RATE_LIMIT_TTL_SECONDS`
+  (padrão 5 / 15 min) → `429` com `Retry-After`. Os contadores ficam em memória (por instância). Atrás de
+  proxy, configure `TRUST_PROXY`. Com várias instâncias, use um storage compartilhado (ex.: Redis).
+- Auditoria (`audit_logs`): `auth.password_reset_requested`, `auth.password_reset_completed`,
+  `auth.password_reset_failed`, `auth.password_changed`, `auth.password_change_failed` — sem senhas,
+  tokens ou links. O dev-log de notificações oculta o conteúdo de mensagens marcadas como sensíveis.
+- E-mails são globalmente únicos, então a conta é localizada pela identidade de autenticação sem
+  ambiguidade entre tenants.
+- Tokens expirados são removidos a cada novo pedido de recuperação. Tokens usados permanecem até
+  expirarem, para rastreabilidade.
 
 ### Decisão: Subscriptions
 
@@ -195,7 +239,8 @@ JWT → JwtStrategy (User ativo + Tenant ACTIVE) → TenantContextGuard → Tena
 ## Tecnologias
 
 NestJS 11 · TypeScript · Prisma 6 · PostgreSQL 16 · Passport + JWT (access/refresh) · class-validator /
-class-transformer · @nestjs/config · @nestjs/swagger · @nestjs/event-emitter · bcrypt · Jest + Supertest ·
+class-transformer · @nestjs/config · @nestjs/swagger · @nestjs/event-emitter · @nestjs/throttler · bcrypt ·
+Nodemailer (SMTP) · Jest + Supertest ·
 ESLint + Prettier · Docker / Docker Compose.
 
 ---
@@ -303,8 +348,32 @@ Build de produção: `npm run build && npm run start:prod`.
 | `SWAGGER_ENABLED` | não | `true` | Habilita `/docs` |
 | `SWAGGER_PATH` | não | `docs` | Caminho do Swagger |
 | `PAYMENT_DEFAULT_PROVIDER` | não | `MANUAL` | `MANUAL`, `ASAAS`, `MERCADO_PAGO`, `STRIPE` |
-| `NOTIFICATION_DEV_LOG` | não | `true` | Loga notificações enquanto não há provider integrado |
+| `NOTIFICATION_DEV_LOG` | não | `true` | Loga notificações de canais sem provider configurado (conteúdo sensível é ocultado) |
+| `TRUST_PROXY` | não | — | `trust proxy` do Express (`1`, `true`, lista de IPs). Necessário atrás de proxy para o rate limit usar o IP real |
+| `PASSWORD_RESET_URL` | para recuperação de senha | — | Página do frontend que recebe `?token=` e chama `POST /auth/reset-password`. Sem ela, nenhum e-mail de redefinição é enviado |
+| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | não | `30` | Validade do link (5–1440) |
+| `PASSWORD_RESET_COOLDOWN_SECONDS` | não | `60` | Intervalo mínimo entre e-mails de redefinição para a mesma conta |
+| `PASSWORD_RATE_LIMIT_MAX` | não | `5` | Requisições por IP, por endpoint de senha, na janela |
+| `PASSWORD_RATE_LIMIT_TTL_SECONDS` | não | `900` | Janela do rate limit |
+| `EMAIL_FROM` | para enviar e-mails | — | Remetente, ex.: `Business Platform <no-reply@seudominio.com>` |
+| `SMTP_HOST` | para enviar e-mails | — | Servidor SMTP. Sem `SMTP_HOST` + `EMAIL_FROM`, o canal EMAIL fica desabilitado |
+| `SMTP_PORT` | não | `587` | Porta SMTP |
+| `SMTP_SECURE` | não | `false` | `true` para TLS implícito (porta 465); `false` usa STARTTLS quando disponível |
+| `SMTP_USER` / `SMTP_PASSWORD` | conforme o provedor | — | Credenciais SMTP (nunca versionar) |
 | `POSTGRES_USER/PASSWORD/DB/PORT` | só Docker | — | Usadas pelo `docker-compose.yml` |
+
+#### Envio de e-mails
+
+O canal EMAIL usa SMTP (Nodemailer) e funciona com qualquer provedor que ofereça SMTP: Amazon SES,
+SendGrid, Mailgun, Resend, Postmark etc. **Nenhum provedor vem configurado.** Até definir `SMTP_HOST` e
+`EMAIL_FROM` com credenciais reais, o canal fica indisponível: as mensagens **não são enviadas** e as
+solicitações de recuperação de senha não geram tokens válidos (o boot registra um aviso). Para produção:
+
+1. Crie as credenciais SMTP no provedor e verifique o domínio do remetente (SPF/DKIM/DMARC).
+2. Defina `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER` e `SMTP_PASSWORD` no ambiente.
+3. Defina `PASSWORD_RESET_URL` com a URL HTTPS do frontend.
+
+Para desenvolvimento, o Mailpit captura os e-mails localmente (veja [Docker](#docker)).
 
 As variáveis são validadas no boot (`src/config/env.validation.ts`); a aplicação não inicia se faltar alguma
 obrigatória. **Nunca** coloque segredos no código. Gere valores fortes, por exemplo:
@@ -330,6 +399,16 @@ docker compose down -v                            # remove também o volume do b
 ```
 
 Se a porta 5432 ou 3000 já estiver em uso, ajuste `POSTGRES_PORT` / `PORT` no `.env`.
+
+**E-mails em desenvolvimento (Mailpit).** O serviço opcional `mailpit` é um servidor SMTP que captura
+todas as mensagens, sem entregá-las de fato:
+
+```bash
+docker compose --profile mail up -d mailpit       # UI em http://localhost:8025
+# API rodando localmente (npm run start:dev):  SMTP_HOST=localhost  SMTP_PORT=1025
+# API no container:                            SMTP_HOST=mailpit    SMTP_PORT=1025
+# Em ambos: EMAIL_FROM="Business Platform <no-reply@example.com>"
+```
 
 O `Dockerfile` é multi-stage: `builder` (compila) e `production` (somente dependências de runtime, usuário
 não-root, healthcheck em `/api/v1/health`).
@@ -405,7 +484,9 @@ Listagens são paginadas com `?page=1&limit=20` e retornam `{ data, meta: { page
 | ------ | ---- | --------- |
 | GET | `/health` | pública |
 | POST | `/auth/register` · `/auth/login` · `/auth/refresh` | pública |
+| POST | `/auth/forgot-password` · `/auth/reset-password` | pública (rate limit) |
 | POST | `/auth/logout` · GET `/auth/me` | autenticado |
+| PATCH | `/auth/change-password` | autenticado (rate limit) |
 | GET / PATCH | `/tenants/current` · PATCH `/tenants/current/settings` | `tenant:read` / `tenant:manage` |
 | GET | `/users/roles` · `/users` · `/users/:id` | `users:read` |
 | POST / PATCH | `/users` · `/users/:id` · `/users/:id/activate` · `/users/:id/deactivate` | `users:manage` |
@@ -423,6 +504,31 @@ Listagens são paginadas com `?page=1&limit=20` e retornam `{ data, meta: { page
 | GET | `/notifications/channels` | `tenant:read` |
 | GET | `/dashboard?from=&to=` | `dashboard:read` |
 | GET | `/audit-logs` | `audit:read` |
+
+#### Senha: exemplos
+
+```bash
+# 1. Solicitar o link (sempre 202, com a mesma mensagem)
+curl -X POST http://localhost:3000/api/v1/auth/forgot-password \
+  -H "Content-Type: application/json" -d '{"email":"owner@barbeariacentral.com"}'
+# 202 {"message":"Se o e-mail estiver cadastrado, você receberá instruções para redefinir sua senha."}
+
+# 2. Redefinir com o token recebido no link (?token=...)
+curl -X POST http://localhost:3000/api/v1/auth/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"token":"<token>","newPassword":"NewStrongPass123!","confirmPassword":"NewStrongPass123!"}'
+# 200 {"message":"Senha redefinida com sucesso. Faça login novamente."}
+# 400 {"message":"Invalid or expired password reset token", ...}   token inválido, expirado ou já usado
+
+# 3. Trocar a senha estando autenticado
+curl -X PATCH http://localhost:3000/api/v1/auth/change-password \
+  -H "Authorization: Bearer <accessToken>" -H "Content-Type: application/json" \
+  -d '{"currentPassword":"Admin123!","newPassword":"NewStrongPass123!","confirmPassword":"NewStrongPass123!"}'
+# 200 {"message":"Senha alterada com sucesso. Faça login novamente."}
+# 400 senha atual incorreta / nova senha igual à atual / política / confirmação · 401 sem autenticação
+```
+
+Os três endpoints respondem `429 Too Many Requests` (com `Retry-After`) ao exceder o rate limit.
 
 ### Barbershop (somente tenants `BARBERSHOP`)
 
@@ -452,7 +558,7 @@ Percentual = base × valor / 100; fixo = valor × quantidade. A geração é ide
 | ------- | ------ | ------------ |
 | `npm test` | Unitários (`src/**/*.spec.ts`) | não |
 | `npm run test:integration` | Repositórios + banco real (`test/integration`) | sim |
-| `npm run test:e2e` | API completa via HTTP (`test/e2e`) — auth, isolamento, barbearia, vendas/pagamentos | sim (migrado + seed) |
+| `npm run test:e2e` | API completa via HTTP (`test/e2e`) — auth, recuperação/troca de senha, rate limit, isolamento, barbearia, vendas/pagamentos | sim (migrado + seed) |
 | `npm run test:cov` | Cobertura dos unitários | não |
 
 Testes de integração e e2e usam o `DATABASE_URL` do ambiente. **Use um banco dedicado a testes** (nunca
@@ -463,6 +569,11 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/business_platform_tes
 DATABASE_URL=... npm run prisma:seed
 DATABASE_URL=... npm run test:e2e
 ```
+
+Os testes e2e substituem o provider SMTP por um duplo que captura as mensagens
+(`test/utils/capturing-email.provider.ts`), então não enviam e-mails. `test/utils/e2e-env.ts` define um
+`PASSWORD_RESET_URL` de teste e um rate limit alto. O próprio rate limit é coberto em
+`password-rate-limit.e2e-spec.ts` com um limite baixo.
 
 ---
 
@@ -518,7 +629,8 @@ Nenhum arquivo do core precisa ser alterado.
 - Asaas *(abstração pronta)*
 - Mercado Pago *(abstração pronta)*
 - WhatsApp *(abstração pronta)*
-- Email *(abstração pronta)*
+- Email *(provider SMTP pronto; requer credenciais de um provedor)*
+- Recuperação e troca de senha ✅
 - Notifications *(eventos e listeners prontos)*
 - Reminders *(scheduler para `subscriptions/lifecycle/run` e lembretes de agendamento)*
 - Commissions ✅

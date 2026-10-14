@@ -19,10 +19,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: AccessTokenPayload): Promise<AuthenticatedUser> {
-    const user = await this.authService.resolveAuthenticatedUser(payload.sub);
+    // Also rejects tokens issued for another tenant or before a password change.
+    const user = await this.authService.resolveAuthenticatedUser(payload);
 
-    // A token issued for another tenant (e.g. after a user move) must not be accepted.
-    if (!user || user.tenantId !== payload.tenantId) {
+    if (!user) {
       throw new UnauthorizedException('User not found or inactive');
     }
 

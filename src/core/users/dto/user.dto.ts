@@ -1,15 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsEmail,
-  IsOptional,
-  IsString,
-  Length,
-  Matches,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, Length } from 'class-validator';
 import { ToOptionalBoolean } from '@common/dto/boolean-query.transform';
+import { IsPasswordPolicy } from '@common/validation/password.validators';
 import { PageMetaDto, PaginationQueryDto } from '@common/dto/pagination.dto';
 
 export class CreateUserDto {
@@ -23,12 +15,7 @@ export class CreateUserDto {
   email!: string;
 
   @ApiProperty({ example: 'StrongPass123!' })
-  @IsString()
-  @MinLength(8)
-  @MaxLength(72)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
-    message: 'password must contain uppercase, lowercase and a number',
-  })
+  @IsPasswordPolicy()
   password!: string;
 
   @ApiProperty({

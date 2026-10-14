@@ -44,9 +44,31 @@ services:
       SWAGGER_PATH: ${SWAGGER_PATH:-docs}
       PAYMENT_DEFAULT_PROVIDER: ${PAYMENT_DEFAULT_PROVIDER:-MANUAL}
       NOTIFICATION_DEV_LOG: ${NOTIFICATION_DEV_LOG:-true}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-}
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:-30}
+      PASSWORD_RESET_COOLDOWN_SECONDS: ${PASSWORD_RESET_COOLDOWN_SECONDS:-60}
+      PASSWORD_RATE_LIMIT_TTL_SECONDS: ${PASSWORD_RATE_LIMIT_TTL_SECONDS:-900}
+      PASSWORD_RATE_LIMIT_MAX: ${PASSWORD_RATE_LIMIT_MAX:-5}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Development SMTP server that captures every e-mail (web UI at http://localhost:8025).
+  #   docker compose --profile mail up -d mailpit   # then SMTP_HOST=mailpit (from the api container)
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: bm-mailpit
+    profiles: ['mail']
+    ports:
+      - '${MAILPIT_SMTP_PORT:-1025}:1025'
+      - '${MAILPIT_UI_PORT:-8025}:8025'
 
   seed:
     build:

@@ -7,7 +7,8 @@ import { Transform, type TransformFnParams } from 'class-transformer';
  */
 export const ToOptionalBoolean = () =>
   Transform(({ value, obj, key }: TransformFnParams) => {
-    const source = obj && key in obj ? obj[key] : value;
+    const record = obj as Record<string, unknown> | undefined;
+    const source: unknown = record && key in record ? record[key] : value;
     if (source === undefined || source === null || source === '') return undefined;
     if (source === true || source === 'true') return true;
     if (source === false || source === 'false') return false;

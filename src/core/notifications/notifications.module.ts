@@ -4,7 +4,6 @@ import { NotificationsController } from '@core/notifications/notifications.contr
 import { CoreNotificationsListener } from '@core/notifications/notifications.listener';
 import { NotificationsService } from '@core/notifications/notifications.service';
 import {
-  EmailNotificationProvider,
   PushNotificationProvider,
   WhatsAppNotificationProvider,
 } from '@core/notifications/providers/channel.providers';
@@ -12,6 +11,7 @@ import {
   NOTIFICATION_PROVIDERS,
   NotificationProvider,
 } from '@core/notifications/providers/notification-provider.interface';
+import { EmailNotificationProvider } from '@core/notifications/providers/smtp-email.provider';
 
 const channelProviders = [
   EmailNotificationProvider,

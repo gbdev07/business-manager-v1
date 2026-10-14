@@ -1,11 +1,14 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { Express } from 'express';
 
 /** Shared by main.ts and the e2e tests so both run the exact same HTTP pipeline. */
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
 
+  // Required behind a reverse proxy so rate limiting sees the client IP, not the proxy's.
+  (app.getHttpAdapter().getInstance() as Express).set('trust proxy', config.get('trustProxy'));
   app.setGlobalPrefix(config.get<string>('apiPrefix', 'api/v1'));
   app.enableCors();
   app.enableShutdownHooks();

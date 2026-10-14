@@ -14,6 +14,8 @@ export interface AccessTokenPayload {
   sub: string;
   tenantId: string;
   role: string;
+  /** User session version at issuance; tokens with an outdated version are rejected. */
+  sv: number;
 }
 
 export interface RefreshTokenPayload {

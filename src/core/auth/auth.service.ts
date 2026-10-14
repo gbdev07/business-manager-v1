@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { TenantStatus } from '@prisma/client';
 import { PasswordHasher } from '@common/security/password-hasher';
-import { AuthenticatedUser } from '@common/types/authenticated-user';
+import { AccessTokenPayload, AuthenticatedUser } from '@common/types/authenticated-user';
 import { AuditAction } from '@core/audit/audit.constants';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthRepository, AuthUserRecord } from '@core/auth/auth.repository';
@@ -98,10 +98,23 @@ export class AuthService {
     await this.auditService.record({ action: AuditAction.AUTH_LOGOUT });
   }
 
-  /** Called by JwtStrategy on every authenticated request. */
-  async resolveAuthenticatedUser(userId: string): Promise<AuthenticatedUser | null> {
-    const user = await this.authRepository.findUserById(userId);
-    return user && isAllowedToAuthenticate(user) ? toAuthenticatedUser(user) : null;
+  /**
+   * Called by JwtStrategy on every authenticated request. Access tokens issued before
+   * the last password change/reset carry an outdated session version and are rejected.
+   */
+  async resolveAuthenticatedUser(payload: AccessTokenPayload): Promise<AuthenticatedUser | null> {
+    const user = await this.authRepository.findUserById(payload.sub);
+
+    if (
+      !user ||
+      !isAllowedToAuthenticate(user) ||
+      user.tenantId !== payload.tenantId ||
+      user.sessionVersion !== payload.sv
+    ) {
+      return null;
+    }
+
+    return toAuthenticatedUser(user);
   }
 
   private async buildAuthResponse(user: AuthUserRecord): Promise<AuthResponseDto> {
@@ -109,13 +122,14 @@ export class AuthService {
       sub: user.id,
       tenantId: user.tenantId,
       role: user.role.key,
+      sv: user.sessionVersion,
     });
 
     return { ...tokens, tokenType: 'Bearer', user: toAuthenticatedUser(user) };
   }
 }
 
-function isAllowedToAuthenticate(user: AuthUserRecord): boolean {
+export function isAllowedToAuthenticate(user: AuthUserRecord): boolean {
   return user.isActive && user.tenant.status === TenantStatus.ACTIVE;
 }
 
