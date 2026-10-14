@@ -1,9 +1,15 @@
-import { Transform } from 'class-transformer';
+import { Transform, type TransformFnParams } from 'class-transformer';
 
-/** Converts "true"/"false" query strings into booleans, keeping undefined when absent. */
+/**
+ * Converts "true"/"false" query strings into booleans, keeping undefined when absent.
+ * Implicit conversion runs first and turns every non-empty string into true, including "false".
+ * The original query value is read from the source object so "false" stays false.
+ */
 export const ToOptionalBoolean = () =>
-  Transform(({ value }: { value: unknown }) => {
-    if (value === undefined || value === null || value === '') return undefined;
-    if (typeof value === 'boolean') return value;
-    return value === 'true';
+  Transform(({ value, obj, key }: TransformFnParams) => {
+    const source = obj && key in obj ? obj[key] : value;
+    if (source === undefined || source === null || source === '') return undefined;
+    if (source === true || source === 'true') return true;
+    if (source === false || source === 'false') return false;
+    return undefined;
   });
