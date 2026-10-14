@@ -14,6 +14,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -23,8 +24,13 @@ import {
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { CurrentUser, Public } from '@common/decorators/auth.decorators';
 import { AuthenticatedUser } from '@common/types/authenticated-user';
-import { AuthService } from '@core/auth/auth.service';
 import {
+  AuthService,
+  TENANT_ACCESS_DENIED_MESSAGE,
+  toPublicAuthUser,
+} from '@core/auth/auth.service';
+import {
+  AccessibleTenantDto,
   AuthResponseDto,
   AuthUserDto,
   ChangePasswordDto,
@@ -33,6 +39,7 @@ import {
   MessageResponseDto,
   RefreshTokenDto,
   ResetPasswordDto,
+  SwitchTenantDto,
 } from '@core/auth/dto/auth.dto';
 import { INVALID_RESET_TOKEN_MESSAGE, PasswordService } from '@core/auth/password.service';
 import { RegisterTenantDto } from '@core/tenants/dto/tenant.dto';
@@ -92,10 +99,48 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Current authenticated user' })
+  @ApiOperation({ summary: 'Current authenticated user and active tenant' })
   @ApiOkResponse({ type: AuthUserDto })
   me(@CurrentUser() user: AuthenticatedUser): AuthUserDto {
-    return user;
+    return toPublicAuthUser(user);
+  }
+
+  @Get('tenants')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'List tenants the authenticated user can access',
+    description:
+      'Returns only active memberships on active tenants. The user is taken from the access token. ' +
+      'An identity with no usable membership receives an empty list. ' +
+      '`isCurrent` marks the tenant bound to this access token.',
+  })
+  @ApiOkResponse({ type: [AccessibleTenantDto] })
+  @ApiUnauthorizedResponse({ description: 'Missing, invalid or revoked access token' })
+  listTenants(@CurrentUser() user: AuthenticatedUser): Promise<AccessibleTenantDto[]> {
+    return this.authService.listAccessibleTenants(user);
+  }
+
+  @Post('tenants/switch')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Switch the active tenant of the current session',
+    description:
+      'Checks that the authenticated user has an active membership on an active destination tenant. ' +
+      'On success, replaces only this session: the previous access token stops working and the response ' +
+      'carries new access and refresh tokens for the destination role. Other devices are not affected. ' +
+      'The same 403 is returned when the tenant does not exist, is inactive, or the user has no access.',
+  })
+  @ApiOkResponse({ type: AuthResponseDto })
+  @ApiBadRequestResponse({ description: 'tenantId is missing or not a UUID' })
+  @ApiUnauthorizedResponse({ description: 'Missing, invalid or revoked access token' })
+  @ApiForbiddenResponse({ description: TENANT_ACCESS_DENIED_MESSAGE })
+  switchTenant(
+    @Body() dto: SwitchTenantDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string,
+  ): Promise<AuthResponseDto> {
+    return this.authService.switchTenant(user, dto.tenantId, ip);
   }
 
   @Public()

@@ -12,6 +12,14 @@ export interface IssuedTokens {
   expiresIn: number;
 }
 
+/** Access-token claims except `sid`, which is the id of the refresh token created with them. */
+export interface SessionClaims {
+  sub: string;
+  tenantId: string;
+  role: string;
+  sv: number;
+}
+
 /**
  * Access tokens: short-lived JWT signed with JWT_SECRET.
  * Refresh tokens: JWT signed with JWT_REFRESH_SECRET whose hash is stored,
@@ -35,26 +43,72 @@ export class TokenService {
     this.refreshSecret = configService.getOrThrow<string>('jwt.refreshSecret');
   }
 
-  async issue(payload: AccessTokenPayload): Promise<IssuedTokens> {
-    const jti = randomUUID();
-    const refreshPayload: RefreshTokenPayload = { sub: payload.sub, jti };
+  async issue(claims: SessionClaims): Promise<IssuedTokens> {
+    const signed = await this.signSession(claims);
+    await this.authRepository.createRefreshToken({
+      id: signed.sessionId,
+      userId: claims.sub,
+      tenantId: claims.tenantId,
+      tokenHash: hashToken(signed.refreshToken),
+      expiresAt: signed.expiresAt,
+    });
+
+    return {
+      accessToken: signed.accessToken,
+      refreshToken: signed.refreshToken,
+      expiresIn: this.accessTtl,
+    };
+  }
+
+  /**
+   * Replaces a single live session. Other refresh tokens of the user are left untouched.
+   * Returns null when that session was already revoked.
+   */
+  async replaceSession(oldSessionId: string, claims: SessionClaims): Promise<IssuedTokens | null> {
+    const signed = await this.signSession(claims);
+    const replaced = await this.authRepository.replaceRefreshToken(oldSessionId, claims.sub, {
+      id: signed.sessionId,
+      userId: claims.sub,
+      tenantId: claims.tenantId,
+      tokenHash: hashToken(signed.refreshToken),
+      expiresAt: signed.expiresAt,
+    });
+
+    if (!replaced) {
+      return null;
+    }
+
+    return {
+      accessToken: signed.accessToken,
+      refreshToken: signed.refreshToken,
+      expiresIn: this.accessTtl,
+    };
+  }
+
+  private async signSession(claims: SessionClaims): Promise<{
+    sessionId: string;
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: Date;
+  }> {
+    const sessionId = randomUUID();
+    const accessPayload: AccessTokenPayload = { ...claims, sid: sessionId };
+    const refreshPayload: RefreshTokenPayload = { sub: claims.sub, jti: sessionId };
 
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, { expiresIn: this.accessTtl }),
+      this.jwtService.signAsync(accessPayload, { expiresIn: this.accessTtl }),
       this.jwtService.signAsync(refreshPayload, {
         secret: this.refreshSecret,
         expiresIn: this.refreshTtl,
       }),
     ]);
 
-    await this.authRepository.createRefreshToken({
-      id: jti,
-      userId: payload.sub,
-      tokenHash: hashToken(refreshToken),
+    return {
+      sessionId,
+      accessToken,
+      refreshToken,
       expiresAt: new Date(Date.now() + this.refreshTtl * 1000),
-    });
-
-    return { accessToken, refreshToken, expiresIn: this.accessTtl };
+    };
   }
 
   async verifyRefreshToken(token: string): Promise<RefreshTokenPayload> {

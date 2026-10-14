@@ -63,7 +63,7 @@ describe('AuthRepository password reset (integration)', () => {
   it('applies the password change atomically with session revocation', async () => {
     const before = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     await prisma.refreshToken.create({
-      data: { userId, tokenHash: `rt-${suffix}`, expiresAt: inOneHour() },
+      data: { userId, tenantId, tokenHash: `rt-${suffix}`, expiresAt: inOneHour() },
     });
     const token = await createToken();
     const pending = await createToken();

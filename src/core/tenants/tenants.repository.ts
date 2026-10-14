@@ -49,6 +49,9 @@ export class TenantsRepository {
           passwordHash: input.owner.passwordHash,
         },
       });
+      await tx.tenantMembership.create({
+        data: { userId: owner.id, tenantId: tenant.id, roleId: input.owner.roleId },
+      });
       return { tenant, owner };
     });
   }

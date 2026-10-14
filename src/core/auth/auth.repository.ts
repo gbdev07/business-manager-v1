@@ -20,6 +20,15 @@ const authInclude = {
   tenant: { select: { id: true, status: true, businessType: true } },
 } as const;
 
+const membershipInclude = {
+  role: true,
+  tenant: { select: { id: true, name: true, slug: true, status: true, businessType: true } },
+} as const;
+
+export type MembershipRecord = Prisma.TenantMembershipGetPayload<{
+  include: typeof membershipInclude;
+}>;
+
 /**
  * Authentication runs before a tenant is resolved, so these queries are intentionally
  * not tenant-scoped. They only look users up by unique identifiers.
@@ -40,13 +49,54 @@ export class AuthRepository {
     await this.prisma.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } });
   }
 
+  /** Every membership of the user, oldest first. Includes inactive rows; callers filter. */
+  listMemberships(userId: string): Promise<MembershipRecord[]> {
+    return this.prisma.tenantMembership.findMany({
+      where: { userId },
+      include: membershipInclude,
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  findMembership(userId: string, tenantId: string): Promise<MembershipRecord | null> {
+    return this.prisma.tenantMembership.findUnique({
+      where: { userId_tenantId: { userId, tenantId } },
+      include: membershipInclude,
+    });
+  }
+
   createRefreshToken(data: {
     id: string;
     userId: string;
+    tenantId: string;
     tokenHash: string;
     expiresAt: Date;
   }): Promise<RefreshToken> {
     return this.prisma.refreshToken.create({ data });
+  }
+
+  /**
+   * Revokes one live session and stores its replacement. Returns false when the session
+   * was already revoked, so a lost race cannot mint a second active session.
+   */
+  async replaceRefreshToken(
+    oldSessionId: string,
+    userId: string,
+    next: { id: string; userId: string; tenantId: string; tokenHash: string; expiresAt: Date },
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const revoked = await tx.refreshToken.updateMany({
+        where: { id: oldSessionId, userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+
+      if (revoked.count !== 1) {
+        return false;
+      }
+
+      await tx.refreshToken.create({ data: next });
+      return true;
+    });
   }
 
   findRefreshToken(id: string): Promise<RefreshToken | null> {

@@ -154,12 +154,12 @@ Estratégia: **banco compartilhado + schema compartilhado + coluna `tenant_id`**
 Fluxo de resolução do tenant (centralizado, sem duplicação por controller):
 
 ```
-JWT → JwtStrategy (User ativo + Tenant ACTIVE) → TenantContextGuard → TenantContext (AsyncLocalStorage)
+JWT (tenant da sessão + sid) → JwtStrategy (usuário ativo, sessão não revogada, vínculo ativo, tenant ACTIVE)
+    → TenantContextGuard → TenantContext (AsyncLocalStorage)
     → Service → TenantScopedRepository (this.tenantId) → Prisma → PostgreSQL
 ```
 
-- O `tenantId` **nunca é recebido do cliente**: vem do usuário autenticado. Enviar `tenantId` no body gera
-  `400` (`forbidNonWhitelisted`).
+- O tenant ativo vem do access token, conferido no servidor contra `tenant_memberships`. Enviar `tenantId` no body de um recurso de negócio gera `400` (`forbidNonWhitelisted`). A única entrada que aceita um tenant de destino é `POST /auth/tenants/switch`, e ela só conclui se o usuário tiver vínculo ativo naquele tenant.
 - Todo repositório de dados de negócio estende `TenantScopedRepository` e filtra por `this.tenantId`.
   Escritas usam `where: { id, tenantId }`; um registro de outro tenant resulta em **404** (não revela existência).
 - Se algum código tentar acessar dados sem contexto de tenant, `TenantContext` lança erro imediatamente.
@@ -172,13 +172,40 @@ JWT → JwtStrategy (User ativo + Tenant ACTIVE) → TenantContextGuard → Tena
 - **Refresh token** JWT (`JWT_REFRESH_EXPIRES_IN`) assinado com `JWT_REFRESH_SECRET`; apenas o hash
   SHA-256 é persistido. Cada refresh **rotaciona** o token; reutilizar um token já rotacionado revoga
   todas as sessões do usuário (detecção de roubo).
-- O access token carrega a versão de sessão do usuário (`sv` ↔ `users.session_version`). Trocar ou
-  redefinir a senha incrementa essa versão, invalidando **imediatamente** os access tokens já emitidos.
+- O access token carrega a versão de sessão do usuário (`sv` ↔ `users.session_version`) e o id da sessão (`sid`, a linha do refresh token). Trocar ou redefinir a senha incrementa `sv` e revoga os refresh tokens, invalidando **todas** as sessões. Trocar de tenant revoga só o `sid` da sessão atual.
+- O tenant ativo da sessão fica no access token e em `refresh_tokens.tenant_id`. `users.tenant_id` continua sendo o tenant onde o usuário é administrado e não muda na troca.
 - Guards globais, nesta ordem: `JwtAuthGuard` → `TenantContextGuard` → `BusinessModuleGuard` → `PermissionsGuard`.
 - Rotas públicas usam `@Public()`; autorização por permissão com `@RequirePermissions('customers:manage')`.
 - Permissões suportam curinga global (`*`) e por recurso (`customers:*`, `barbershop.appointments:*`).
 - Roles do sistema são sincronizadas com o código **a cada boot** (`SystemRolesService`), incluindo as
   permissões contribuídas pelos módulos. O `OWNER` tem `*`.
+
+### Listagem e troca de tenant
+
+O acesso de uma identidade a cada empresa fica em `tenant_memberships` (usuário, tenant, papel, ativo).
+O login entra no tenant de origem (`users.tenant_id`) quando esse vínculo ainda pode autenticar; se não
+puder, entra no vínculo utilizável mais antigo. O refresh reemite o tenant gravado **naquele** refresh token.
+
+`GET /auth/tenants` devolve só vínculos ativos em tenants `ACTIVE`, com `isCurrent` no tenant desta sessão.
+Quem não tem vínculo utilizável recebe `[]`.
+
+`POST /auth/tenants/switch` recebe `{ "tenantId" }`, confere o vínculo no servidor e troca só a sessão do
+access token. A resposta é o mesmo formato do login (novos `accessToken` e `refreshToken`, `user` já no
+tenant e no papel de destino). O access token anterior passa a responder `401`. Outras sessões do mesmo
+usuário não mudam. Tenant inexistente, inativo ou sem vínculo responde `403` com a mesma mensagem, sem
+dizer qual dos casos ocorreu. A troca não exige permissão de negócio: o papel do destino é o do vínculo,
+não o da sessão de origem. `users.tenant_id` não é alterado; `/users` continua listando quem é administrado
+naquele tenant.
+
+Tokens de acesso emitidos antes do campo `sid` são recusados. É preciso entrar de novo depois do deploy.
+
+```bash
+curl http://localhost:3000/api/v1/auth/tenants -H "Authorization: Bearer $ACCESS_TOKEN"
+
+curl -X POST http://localhost:3000/api/v1/auth/tenants/switch \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"tenantId":"<uuid do tenant de destino>"}'
+```
 
 ### Recuperação e troca de senha
 
@@ -486,6 +513,8 @@ Listagens são paginadas com `?page=1&limit=20` e retornam `{ data, meta: { page
 | POST | `/auth/register` · `/auth/login` · `/auth/refresh` | pública |
 | POST | `/auth/forgot-password` · `/auth/reset-password` | pública (rate limit) |
 | POST | `/auth/logout` · GET `/auth/me` | autenticado |
+| GET | `/auth/tenants` | autenticado |
+| POST | `/auth/tenants/switch` | autenticado |
 | PATCH | `/auth/change-password` | autenticado (rate limit) |
 | GET / PATCH | `/tenants/current` · PATCH `/tenants/current/settings` | `tenant:read` / `tenant:manage` |
 | GET | `/users/roles` · `/users` · `/users/:id` | `users:read` |

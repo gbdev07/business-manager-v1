@@ -47,7 +47,7 @@ async function main(): Promise<void> {
   const tenantId = tenant.id;
 
   const ownerRole = await prisma.role.findUniqueOrThrow({ where: { key: SystemRole.OWNER } });
-  await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: { email: DEMO_ADMIN_EMAIL },
     create: {
       tenantId,
@@ -57,6 +57,11 @@ async function main(): Promise<void> {
       passwordHash: await bcrypt.hash(DEMO_ADMIN_PASSWORD, 12),
     },
     update: {},
+  });
+  await prisma.tenantMembership.upsert({
+    where: { userId_tenantId: { userId: admin.id, tenantId } },
+    create: { userId: admin.id, tenantId, roleId: admin.roleId },
+    update: { roleId: admin.roleId, isActive: true },
   });
 
   await prisma.barbershopSettings.upsert({

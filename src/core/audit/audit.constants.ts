@@ -7,6 +7,8 @@ export const AuditAction = {
   AUTH_PASSWORD_RESET_FAILED: 'auth.password_reset_failed',
   AUTH_PASSWORD_CHANGED: 'auth.password_changed',
   AUTH_PASSWORD_CHANGE_FAILED: 'auth.password_change_failed',
+  AUTH_TENANT_SWITCHED: 'auth.tenant_switched',
+  AUTH_TENANT_SWITCH_FAILED: 'auth.tenant_switch_failed',
   TENANT_REGISTERED: 'tenant.registered',
   TENANT_UPDATED: 'tenant.updated',
   USER_CREATED: 'user.created',

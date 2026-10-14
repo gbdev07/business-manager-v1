@@ -47,6 +47,8 @@ model Tenant {
   barbershopPlanBenefit BarbershopPlanBenefit[]
   commissionRules       CommissionRule[]
   commissions           Commission[]
+  memberships           TenantMembership[]
+  refreshTokens         RefreshToken[]
 
   @@index([status])
   @@index([businessType])
@@ -64,13 +66,15 @@ model Role {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  users User[]
+  users       User[]
+  memberships TenantMembership[]
 
   @@map("roles")
 }
 
 model User {
   id                String    @id @default(uuid())
+  /// Home tenant: where this user is administered. The active tenant of a session is the refresh token, not this column.
   tenantId          String    @map("tenant_id")
   roleId            String    @map("role_id")
   name              String
@@ -86,6 +90,7 @@ model User {
 
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   role                Role                 @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  memberships         TenantMembership[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   sales               Sale[]
@@ -100,16 +105,39 @@ model User {
 model RefreshToken {
   id        String    @id @default(uuid())
   userId    String    @map("user_id")
+  /// Tenant this session is operating in. Other sessions of the same user keep their own value.
+  tenantId  String    @map("tenant_id")
   tokenHash String    @unique @map("token_hash")
   expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+/// One identity's access to one tenant. This is the authorization record for listing and switching;
+/// it does not replace `User.tenantId`, which remains the home tenant used by user administration.
+model TenantMembership {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tenantId  String   @map("tenant_id")
+  roleId    String   @map("role_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId, isActive])
+  @@map("tenant_memberships")
 }
 
 /// Single-use password reset token. Only the SHA-256 hash of the token is stored.

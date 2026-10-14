@@ -1,7 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { BusinessType } from '@prisma/client';
+import { BusinessType, TenantStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsJWT, IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsJWT,
+  IsNotEmpty,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import {
   IsPasswordPolicy,
   MatchesProperty,
@@ -103,6 +111,44 @@ export class ResetPasswordDto {
   @IsString()
   @MatchesProperty('newPassword')
   confirmPassword!: string;
+}
+
+export class AccessibleTenantDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ example: 'Barbearia Central' })
+  name!: string;
+
+  @ApiProperty({ example: 'barbearia-central' })
+  slug!: string;
+
+  @ApiProperty({ enum: TenantStatus, example: TenantStatus.ACTIVE })
+  status!: TenantStatus;
+
+  @ApiProperty({ enum: BusinessType, example: BusinessType.BARBERSHOP })
+  businessType!: BusinessType;
+
+  @ApiProperty({
+    example: 'EMPLOYEE',
+    description: 'Role of the authenticated user in this tenant',
+  })
+  role!: string;
+
+  @ApiProperty({
+    description: 'True when this tenant is the one bound to the current access token',
+  })
+  isCurrent!: boolean;
+}
+
+export class SwitchTenantDto {
+  @ApiProperty({
+    description:
+      'Destination tenant. Access is checked against the user membership, not this value alone.',
+    example: '3f1c2a40-7b3e-4d1a-9c2e-6b8a1d4e5f70',
+  })
+  @IsUUID()
+  tenantId!: string;
 }
 
 export class ChangePasswordDto {

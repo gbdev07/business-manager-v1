@@ -54,17 +54,34 @@ export class UsersRepository extends TenantScopedRepository {
   }
 
   create(data: Omit<Prisma.UserUncheckedCreateInput, 'tenantId'>): Promise<UserWithRole> {
-    return this.prisma.user.create({
-      data: { ...data, tenantId: this.tenantId },
-      include: withRole,
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: { ...data, tenantId: this.tenantId },
+        include: withRole,
+      });
+      await tx.tenantMembership.create({
+        data: { userId: user.id, tenantId: user.tenantId, roleId: user.roleId },
+      });
+      return user;
     });
   }
 
   update(id: string, data: Prisma.UserUncheckedUpdateInput): Promise<UserWithRole> {
-    return this.prisma.user.update({
-      where: { id, tenantId: this.tenantId },
-      data,
-      include: withRole,
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id, tenantId: this.tenantId },
+        data,
+        include: withRole,
+      });
+
+      if (typeof data.roleId === 'string') {
+        await tx.tenantMembership.updateMany({
+          where: { userId: id, tenantId: this.tenantId },
+          data: { roleId: data.roleId },
+        });
+      }
+
+      return user;
     });
   }
 
